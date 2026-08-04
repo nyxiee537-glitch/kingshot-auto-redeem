@@ -8,9 +8,7 @@ REDEEM_URL = "https://ks-giftcode.centurygame.com/"
 
 
 def main() -> None:
-    player_id = os.environ["KINGSHOT_PLAYER_ID"]
-    kingdom = os.environ["KINGSHOT_KINGDOM"]
-    gift_code = os.environ.get("GIFT_CODE", "TEST_CODE")
+    players = get_players_from_notion()
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
