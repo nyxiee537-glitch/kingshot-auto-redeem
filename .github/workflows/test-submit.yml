@@ -1,1 +1,53 @@
+name: Test KingShot Submit
 
+on:
+  workflow_dispatch:
+    inputs:
+      player_name:
+        description: HN of the one player to test
+        required: true
+        default: Nyxie
+      gift_code:
+        description: Gift code to redeem
+        required: true
+        default: KS0803
+
+jobs:
+  test-submit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python packages
+        run: pip install -r requirements.txt
+
+      - name: Install Chromium
+        run: playwright install --with-deps chromium
+
+      - name: Submit gift code for one player
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          TEST_PLAYER_NAME: ${{ inputs.player_name }}
+          GIFT_CODE: ${{ inputs.gift_code }}
+        run: python test_submit.py
+
+      - name: Upload submission results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kingshot-submit-test
+          path: |
+            01-before-confirm.png
+            02-after-confirm.png
+            99-submit-error.png
+            submit-result.txt
+          if-no-files-found: ignore
+          retention-days: 7
