@@ -148,17 +148,17 @@ def main() -> None:
                 full_page=True,
             )
 
-            confirm_button = page.get_by_role(
-                "button",
-                name=re.compile(r"^Confirm$", re.IGNORECASE),
-            )
+confirm_text = page.get_by_text("Confirm", exact=True)
 
-            if confirm_button.count() == 0:
-                raise RuntimeError(
-                    "Confirmボタンが見つかりませんでした。"
-                )
+if confirm_text.count() == 0:
+    raise RuntimeError(
+        "Confirmの文字が見つかりませんでした。"
+    )
 
-            confirm_button.first.click(timeout=15_000)
+confirm_text.first.click(
+    force=True,
+    timeout=15_000,
+)
 
             # サイトの結果表示を待つ
             time.sleep(5)
