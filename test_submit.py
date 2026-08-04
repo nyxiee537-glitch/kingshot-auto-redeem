@@ -143,24 +143,27 @@ def main() -> None:
             fill_input(page, "Kingdom", 1, kingdom)
             fill_input(page, "Gift Code", 2, gift_code)
 
-            page.screenshot(
+                    page.screenshot(
                 path="01-before-confirm.png",
                 full_page=True,
             )
 
-confirm_text = page.get_by_text("Confirm", exact=True)
+            confirm_text = page.get_by_text(
+                "Confirm",
+                exact=True,
+            )
 
-if confirm_text.count() == 0:
-    raise RuntimeError(
-        "Confirmの文字が見つかりませんでした。"
-    )
+            if confirm_text.count() == 0:
+                raise RuntimeError(
+                    "Confirmの文字が見つかりませんでした。"
+                )
 
-confirm_text.first.click(
-    force=True,
-    timeout=15_000,
-)
+            confirm_text.first.click(
+                force=True,
+                timeout=15_000,
+            )
 
-            # サイトの結果表示を待つ
+            # 結果が表示されるまで少し待つ
             time.sleep(5)
 
             page.screenshot(
@@ -172,6 +175,7 @@ confirm_text.first.click(
 
             print("Confirm clicked.")
             print("Result screenshot and text were saved.")
+
 
         except Exception:
             page.screenshot(
