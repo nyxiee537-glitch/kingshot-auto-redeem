@@ -1,0 +1,47 @@
+name: Test KingShot Form
+
+on:
+  workflow_dispatch:
+    inputs:
+      gift_code:
+        description: Gift code used for the form test
+        required: true
+        default: KS0803
+
+jobs:
+  test-form:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python packages
+        run: pip install -r requirements.txt
+
+      - name: Install Chromium
+        run: playwright install --with-deps chromium
+
+      - name: Fill KingShot form
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          GIFT_CODE: ${{ inputs.gift_code }}
+        run: python test_form.py
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kingshot-form-test
+          path: |
+            01-page-opened.png
+            02-form-filled.png
+            99-error.png
+          if-no-files-found: ignore
+          retention-days: 7
