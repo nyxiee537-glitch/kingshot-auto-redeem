@@ -19,10 +19,7 @@ def fill_input(
     fallback_index: int,
     value: str,
 ) -> None:
-    """
-    placeholderで入力欄を探す。
-    見つからない場合は、上から何番目のinputかで指定する。
-    """
+    """入力欄をplaceholderで探し、なければ順番で探す。"""
     locator = page.get_by_placeholder(
         re.compile(placeholder, re.IGNORECASE)
     )
@@ -45,14 +42,11 @@ def select_player(
     players: list[dict[str, str]],
     requested_name: str,
 ) -> dict[str, str]:
-    """
-    workflowで指定したHNと完全一致するプレイヤーを選ぶ。
-    大文字・小文字は区別しない。
-    """
-    normalized_requested = requested_name.strip().casefold()
+    """指定されたHNと一致するプレイヤーを選ぶ。"""
+    normalized_name = requested_name.strip().casefold()
 
     for player in players:
-        if player["name"].strip().casefold() == normalized_requested:
+        if player["name"].strip().casefold() == normalized_name:
             return player
 
     available_names = ", ".join(
@@ -69,10 +63,7 @@ def save_result_text(
     page: Page,
     player_id: str,
 ) -> None:
-    """
-    交換後の画面内テキストを保存する。
-    Player IDはファイル内で伏せる。
-    """
+    """交換後の画面内テキストを保存する。"""
     body_text = page.locator("body").inner_text(timeout=10_000)
     safe_text = body_text.replace(player_id, "***PLAYER_ID***")
 
@@ -139,11 +130,28 @@ def main() -> None:
                 timeout=60_000,
             )
 
-            fill_input(page, "Player ID", 0, player_id)
-            fill_input(page, "Kingdom", 1, kingdom)
-            fill_input(page, "Gift Code", 2, gift_code)
+            fill_input(
+                page,
+                "Player ID",
+                0,
+                player_id,
+            )
 
-                    page.screenshot(
+            fill_input(
+                page,
+                "Kingdom",
+                1,
+                kingdom,
+            )
+
+            fill_input(
+                page,
+                "Gift Code",
+                2,
+                gift_code,
+            )
+
+            page.screenshot(
                 path="01-before-confirm.png",
                 full_page=True,
             )
@@ -163,7 +171,6 @@ def main() -> None:
                 timeout=15_000,
             )
 
-            # 結果が表示されるまで少し待つ
             time.sleep(5)
 
             page.screenshot(
@@ -175,7 +182,6 @@ def main() -> None:
 
             print("Confirm clicked.")
             print("Result screenshot and text were saved.")
-
 
         except Exception:
             page.screenshot(
