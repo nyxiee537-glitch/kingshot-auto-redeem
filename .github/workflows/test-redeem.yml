@@ -1,0 +1,43 @@
+name: Test KingShot Redeem
+
+on:
+  workflow_dispatch:
+    inputs:
+      gift_code:
+        description: Gift code for testing
+        required: true
+        default: TEST_CODE
+
+jobs:
+  test-redeem:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python packages
+        run: pip install -r requirements.txt
+
+      - name: Install Chromium
+        run: playwright install --with-deps chromium
+
+      - name: Fill redemption form
+        env:
+          KINGSHOT_PLAYER_ID: ${{ secrets.KINGSHOT_PLAYER_ID }}
+          KINGSHOT_KINGDOM: ${{ secrets.KINGSHOT_KINGDOM }}
+          GIFT_CODE: ${{ inputs.gift_code }}
+        run: python redeem.py
+
+      - name: Upload test screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: filled-form
+          path: filled-form.png
+          if-no-files-found: ignore
