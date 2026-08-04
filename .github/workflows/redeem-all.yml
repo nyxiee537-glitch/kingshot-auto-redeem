@@ -1,0 +1,54 @@
+name: Redeem KingShot Code for All Players
+
+on:
+  workflow_dispatch:
+    inputs:
+      gift_code:
+        description: Gift code to process
+        required: true
+        default: KS0803
+
+      dry_run:
+        description: Fill forms without clicking Confirm
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  redeem-all:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python packages
+        run: pip install -r requirements.txt
+
+      - name: Install Chromium
+        run: playwright install --with-deps chromium
+
+      - name: Redeem code for active players
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          GIFT_CODE: ${{ inputs.gift_code }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: python redeem.py
+
+      - name: Upload redemption results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kingshot-redeem-results
+          path: |
+            redeem-results/
+            redeem-summary.txt
+          if-no-files-found: ignore
+          retention-days: 7
