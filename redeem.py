@@ -85,6 +85,8 @@ def classify_result(page_text: str) -> tuple[str, str]:
         "already used",
         "already claimed",
         "redeemed already",
+        "the same gift code type can only be redeemed once",
+        "can only be redeemed once",
     )
 
     invalid_words = (
@@ -97,10 +99,8 @@ def classify_result(page_text: str) -> tuple[str, str]:
     )
 
     success_words = (
-        "success",
-        "successful",
-        "redeemed",
-        "reward",
+        "redeemed successfully",
+        "please check your mail for rewards",
     )
 
     if any(word in normalized for word in already_words):
