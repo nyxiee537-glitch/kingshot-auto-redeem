@@ -90,6 +90,8 @@ def classify_result(page_text: str) -> tuple[str, str]:
     invalid_words = (
         "invalid",
         "expired",
+        "unable to claim",
+        "expired, unable to claim",
         "not valid",
         "does not exist",
     )
