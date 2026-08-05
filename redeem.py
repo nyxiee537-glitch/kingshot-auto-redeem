@@ -84,6 +84,7 @@ def classify_result(page_text: str) -> tuple[str, str]:
         "already redeemed",
         "already used",
         "already claimed",
+        "gift has already been claimed",
         "redeemed already",
         "the same gift code type can only be redeemed once",
         "can only be redeemed once",
