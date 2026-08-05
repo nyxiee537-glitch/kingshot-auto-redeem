@@ -42,6 +42,12 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run }}
         run: python redeem.py
 
+      - name: Send results to Discord
+        if: always()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python notify_discord.py
+
       - name: Upload redemption results
         if: always()
         uses: actions/upload-artifact@v4
