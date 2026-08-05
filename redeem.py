@@ -200,6 +200,10 @@ def redeem_for_player(
         # 結果表示を待つ
         time.sleep(5)
 
+        print("========== PAGE TEXT ==========")
+        print(page.locator("body").inner_text())
+        print("===============================")
+
         after_path = RESULTS_DIR / (
             f"{player_number:03d}-{filename_name}-after.png"
         )
