@@ -1,18 +1,25 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from playwright.sync_api import Page, sync_playwright
 
+from config import (
+    MAX_SERVER_BUSY_RETRIES,
+    PLAYER_INTERVAL_SECONDS,
+    REDEEM_URL,
+    RESULT_WAIT_SECONDS,
+    RESULTS_DIR,
+    SERVER_BUSY_RETRY_DELAYS,
+    SUMMARY_JSON_FILE,
+    SUMMARY_TEXT_FILE,
+)
 from test_notion import get_active_players, get_data_source_id
-
-
-REDEEM_URL = "https://ks-giftcode.centurygame.com/"
-RESULTS_DIR = Path("redeem-results")
 
 
 @dataclass
@@ -24,15 +31,12 @@ class RedeemResult:
 
 
 def mask_player_id(player_id: str) -> str:
-    """Player IDをGitHubログ上で伏せる。"""
     if len(player_id) >= 4:
         return f"***{player_id[-4:]}"
-
     return "***"
 
 
 def safe_filename(value: str) -> str:
-    """HNをスクリーンショットのファイル名に使える形へ変換する。"""
     cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", value.strip())
     return cleaned or "player"
 
@@ -43,10 +47,6 @@ def fill_input(
     fallback_index: int,
     value: str,
 ) -> None:
-    """
-    placeholderで入力欄を探す。
-    見つからなければ、上から何番目のinputかで探す。
-    """
     locator = page.get_by_placeholder(
         re.compile(placeholder, re.IGNORECASE)
     )
@@ -58,32 +58,24 @@ def fill_input(
     inputs = page.locator("input")
 
     if inputs.count() <= fallback_index:
-        raise RuntimeError(
-            f"入力欄が見つかりませんでした: {placeholder}"
-        )
+        raise RuntimeError(f"入力欄が見つかりませんでした: {placeholder}")
 
     inputs.nth(fallback_index).fill(value)
 
 
 def get_page_text(page: Page, player_id: str) -> str:
-    """画面内テキストを取得し、Player IDを伏せる。"""
     body_text = page.locator("body").inner_text(timeout=10_000)
     return body_text.replace(player_id, "***PLAYER_ID***")
 
 
 def classify_result(page_text: str) -> tuple[str, str]:
-    """
-    画面の文言から結果を大まかに分類する。
-
-    Server busy は一時的なサーバー混雑として別判定し、
-    redeem_for_player 側で再試行する。
-    """
     normalized = page_text.casefold()
 
-    server_busy_words = (
-        "server busy. please try again later.",
-        "server busy",
-    )
+    if (
+        "server busy. please try again later." in normalized
+        or "server busy" in normalized
+    ):
+        return "server_busy", "サーバー混雑のため再試行対象です。"
 
     already_words = (
         "already redeemed",
@@ -109,37 +101,33 @@ def classify_result(page_text: str) -> tuple[str, str]:
         "please check your mail for rewards",
     )
 
-    if any(word in normalized for word in server_busy_words):
-        return "server_busy", "サーバー混雑を検出しました。再試行します。"
-
     if any(word in normalized for word in already_words):
-        return "already_redeemed", "すでに交換済みの可能性があります。"
+        return "already_redeemed", "すでに交換済みです。"
 
     if any(word in normalized for word in invalid_words):
         return "failed", "無効または期限切れの可能性があります。"
 
     if any(word in normalized for word in success_words):
-        return "success", "交換成功を示す文言が検出されました。"
+        return "success", "交換成功。"
 
     return "unknown", "結果を自動判定できませんでした。"
 
 
 def close_server_busy_popup(page: Page) -> None:
-    """
-    Server busy のポップアップが表示されている場合だけ閉じる。
-
-    ポップアップの文言を基準に近くの Confirm を探す。
-    見つからない場合は Escape も試す。
-    """
     busy_text = page.get_by_text(
-        re.compile(r"Server busy\. Please try again later\.", re.IGNORECASE)
+        re.compile(
+            r"Server busy\. Please try again later\.",
+            re.IGNORECASE,
+        )
     )
 
     if busy_text.count() == 0:
         return
 
     try:
-        popup = busy_text.first.locator("xpath=ancestor::*[.//button or .//*[normalize-space()='Confirm']][1]")
+        popup = busy_text.first.locator(
+            "xpath=ancestor::*[.//button or .//*[normalize-space()='Confirm']][1]"
+        )
         confirm = popup.get_by_text("Confirm", exact=True)
 
         if confirm.count() > 0:
@@ -161,35 +149,20 @@ def redeem_for_player(
     dry_run: bool,
     player_number: int,
 ) -> RedeemResult:
-    """1人分の入力・交換処理を行う。"""
-    name = player["name"].strip()
+    name = player["name"].strip() or f"Player-{player_number}"
     player_id = player["player_id"].strip()
     kingdom = player["kingdom"].strip()
-
-    if not name:
-        name = f"Player-{player_number}"
 
     masked_id = mask_player_id(player_id)
     filename_name = safe_filename(name)
 
     if not player_id:
-        return RedeemResult(
-            name=name,
-            player_id_masked=masked_id,
-            status="failed",
-            message="Player IDが空です。",
-        )
+        return RedeemResult(name, masked_id, "failed", "Player IDが空です。")
 
     if not kingdom:
-        return RedeemResult(
-            name=name,
-            player_id_masked=masked_id,
-            status="failed",
-            message="Kingdomが空です。",
-        )
+        return RedeemResult(name, masked_id, "failed", "Kingdomが空です。")
 
-    print("")
-    print(f"[{player_number}] Processing: {name}")
+    print(f"\n[{player_number}] Processing: {name}")
     print(f"Player ID: {masked_id}")
     print(f"Kingdom: {kingdom}")
 
@@ -204,133 +177,100 @@ def redeem_for_player(
         fill_input(page, "Kingdom", 1, kingdom)
         fill_input(page, "Gift Code", 2, gift_code)
 
-        before_path = RESULTS_DIR / (
-            f"{player_number:03d}-{filename_name}-before.png"
-        )
-
         page.screenshot(
-            path=str(before_path),
+            path=str(
+                RESULTS_DIR
+                / f"{player_number:03d}-{filename_name}-before.png"
+            ),
             full_page=True,
         )
 
         if dry_run:
-            print("DRY RUN: Confirmは押していません。")
-
             return RedeemResult(
-                name=name,
-                player_id_masked=masked_id,
-                status="dry_run",
-                message="入力確認のみ。Confirmは未実行です。",
+                name,
+                masked_id,
+                "dry_run",
+                "入力確認のみ。Confirmは未実行です。",
             )
-
-        # 初回 + 最大3回再試行
-        max_retries = 3
-        retry_delays = (5, 10, 20)
 
         status = "unknown"
         message = "結果を自動判定できませんでした。"
         page_text = ""
 
-        for attempt in range(max_retries + 1):
-            # 再試行時は入力欄を必ず入れ直す
+        for attempt in range(MAX_SERVER_BUSY_RETRIES + 1):
             if attempt > 0:
                 fill_input(page, "Player ID", 0, player_id)
                 fill_input(page, "Kingdom", 1, kingdom)
                 fill_input(page, "Gift Code", 2, gift_code)
 
-            confirm_text = page.get_by_text(
-                "Confirm",
-                exact=True,
-            )
+            confirm_text = page.get_by_text("Confirm", exact=True)
 
             if confirm_text.count() == 0:
-                raise RuntimeError(
-                    "Confirmの文字が見つかりませんでした。"
-                )
+                raise RuntimeError("Confirmの文字が見つかりませんでした。")
 
-            # 通常フォーム側の Confirm を優先して押す。
-            # Server busy ポップアップはこの時点では閉じてある想定。
             confirm_text.last.click(
                 force=True,
                 timeout=15_000,
             )
 
-            # 結果表示を待つ
-            time.sleep(5)
-
-            print("========== PAGE TEXT ==========")
-            print(page.locator("body").inner_text())
-            print("===============================")
+            time.sleep(RESULT_WAIT_SECONDS)
 
             page_text = get_page_text(page, player_id)
             status, message = classify_result(page_text)
 
-            print(f"Attempt: {attempt + 1}/{max_retries + 1}")
-            print(f"Result: {status}")
-            print(f"Message: {message}")
+            print(
+                f"Attempt {attempt + 1}/"
+                f"{MAX_SERVER_BUSY_RETRIES + 1}: {status}"
+            )
 
             if status != "server_busy":
                 break
 
-            # server_busy の場合のみ再試行
-            if attempt >= max_retries:
+            if attempt >= MAX_SERVER_BUSY_RETRIES:
                 message = (
                     "サーバー混雑が続いたため、"
-                    f"{max_retries}回の再試行後も交換できませんでした。"
+                    f"{MAX_SERVER_BUSY_RETRIES}回の再試行後も交換できませんでした。"
                 )
                 break
 
-            retry_delay = retry_delays[
-                min(attempt, len(retry_delays) - 1)
+            delay = SERVER_BUSY_RETRY_DELAYS[
+                min(attempt, len(SERVER_BUSY_RETRY_DELAYS) - 1)
             ]
 
-            print(
-                f"Server busy detected. "
-                f"{retry_delay}秒後に再入力して再試行します。"
-            )
-
-            # ポップアップを閉じる
+            print(f"Server busy → {delay}秒後に再試行")
             close_server_busy_popup(page)
-
-            # サーバーに連打しないよう待機
-            time.sleep(retry_delay)
-
-        after_path = RESULTS_DIR / (
-            f"{player_number:03d}-{filename_name}-after.png"
-        )
+            time.sleep(delay)
 
         page.screenshot(
-            path=str(after_path),
+            path=str(
+                RESULTS_DIR
+                / f"{player_number:03d}-{filename_name}-after.png"
+            ),
             full_page=True,
         )
 
-        text_path = RESULTS_DIR / (
-            f"{player_number:03d}-{filename_name}-result.txt"
-        )
-
-        text_path.write_text(
+        (
+            RESULTS_DIR
+            / f"{player_number:03d}-{filename_name}-result.txt"
+        ).write_text(
             page_text,
             encoding="utf-8",
         )
 
-        print(f"Final result: {status}")
-        print(f"Final message: {message}")
-
         return RedeemResult(
-            name=name,
-            player_id_masked=masked_id,
-            status=status,
-            message=message,
+            name,
+            masked_id,
+            status,
+            message,
         )
 
     except Exception as exc:
-        error_path = RESULTS_DIR / (
-            f"{player_number:03d}-{filename_name}-error.png"
-        )
-
         try:
             page.screenshot(
-                path=str(error_path),
+                path=str(
+                    RESULTS_DIR
+                    / f"{player_number:03d}-{filename_name}-error.png"
+                ),
                 full_page=True,
             )
         except Exception:
@@ -339,10 +279,10 @@ def redeem_for_player(
         print(f"ERROR: {name}: {exc}")
 
         return RedeemResult(
-            name=name,
-            player_id_masked=masked_id,
-            status="failed",
-            message=str(exc),
+            name,
+            masked_id,
+            "failed",
+            str(exc),
         )
 
 
@@ -350,14 +290,36 @@ def save_summary(
     gift_code: str,
     dry_run: bool,
     results: list[RedeemResult],
-) -> None:
-    """全員分の結果をテキストへまとめる。"""
-    status_counts: dict[str, int] = {}
+) -> dict:
+    counts: dict[str, int] = {}
 
     for result in results:
-        status_counts[result.status] = (
-            status_counts.get(result.status, 0) + 1
+        counts[result.status] = counts.get(result.status, 0) + 1
+
+    summary = {
+        "gift_code": gift_code,
+        "dry_run": dry_run,
+        "total_players": len(results),
+        "counts": counts,
+        "results": [
+            {
+                "name": result.name,
+                "status": result.status,
+                "message": result.message,
+            }
+            for result in results
+        ],
+    }
+
+    SUMMARY_JSON_FILE.write_text(
+        json.dumps(
+            summary,
+            ensure_ascii=False,
+            indent=2,
         )
+        + "\n",
+        encoding="utf-8",
+    )
 
     lines = [
         f"Gift code: {gift_code}",
@@ -367,65 +329,43 @@ def save_summary(
         "Summary:",
     ]
 
-    for status, count in sorted(status_counts.items()):
+    for status, count in sorted(counts.items()):
         lines.append(f"- {status}: {count}")
 
-    lines.extend(
-        [
-            "",
-            "Players:",
-        ]
-    )
+    lines.extend(["", "Players:"])
 
+    # Discord添付用なのでPlayer IDは書かず、ユーザー名だけにする。
     for result in results:
         lines.append(
-            f"- {result.name} | "
-            f"{result.player_id_masked} | "
-            f"{result.status} | "
-            f"{result.message}"
+            f"- {result.name} | {result.status} | {result.message}"
         )
 
-    summary_text = "\n".join(lines)
-
-    Path("redeem-summary.txt").write_text(
-        summary_text,
+    SUMMARY_TEXT_FILE.write_text(
+        "\n".join(lines) + "\n",
         encoding="utf-8",
     )
 
-    print("")
-    print(summary_text)
+    return summary
 
 
 def main() -> None:
     database_id = os.environ["NOTION_DATABASE_ID"]
     gift_code = os.environ["GIFT_CODE"].strip()
-
-    dry_run_value = os.environ.get(
-        "DRY_RUN",
-        "true",
-    ).strip().casefold()
-
-    dry_run = dry_run_value in {
-        "true",
-        "1",
-        "yes",
-        "on",
+    dry_run = os.environ.get("DRY_RUN", "false").strip().casefold() in {
+        "true", "1", "yes", "on"
     }
 
     if not gift_code:
         raise RuntimeError("GIFT_CODEが空です。")
 
-    RESULTS_DIR.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     data_source_id = get_data_source_id(database_id)
     players = get_active_players(data_source_id)
 
     if not players:
         raise RuntimeError(
-            "Notionにチェック済みのプレイヤーがいません。"
+            "NotionにActiveのプレイヤーがいません。"
         )
 
     print(f"Gift code: {gift_code}")
@@ -435,49 +375,36 @@ def main() -> None:
     results: list[RedeemResult] = []
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(
-            headless=True,
-        )
-
+        browser = playwright.chromium.launch(headless=True)
         page = browser.new_page(
-            viewport={
-                "width": 1450,
-                "height": 1000,
-            },
+            viewport={"width": 1450, "height": 1000}
         )
 
         try:
-            for index, player in enumerate(
-                players,
-                start=1,
-            ):
-                result = redeem_for_player(
-                    page=page,
-                    player=player,
-                    gift_code=gift_code,
-                    dry_run=dry_run,
-                    player_number=index,
+            for index, player in enumerate(players, start=1):
+                results.append(
+                    redeem_for_player(
+                        page,
+                        player,
+                        gift_code,
+                        dry_run,
+                        index,
+                    )
                 )
-
-                results.append(result)
-
-                # サイトへ連続アクセスしすぎないよう少し間隔を空ける
-                time.sleep(3)
-
+                time.sleep(PLAYER_INTERVAL_SECONDS)
         finally:
             browser.close()
 
-    save_summary(
-        gift_code=gift_code,
-        dry_run=dry_run,
-        results=results,
+    summary = save_summary(
+        gift_code,
+        dry_run,
+        results,
     )
 
-    # 全員失敗した場合のみActionを失敗扱いにする
-    if results and all(
-        result.status == "failed"
-        for result in results
-    ):
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+
+    # すべて failed のときだけプロセス失敗。
+    if results and all(r.status == "failed" for r in results):
         raise RuntimeError(
             "すべてのプレイヤーで処理に失敗しました。"
         )
