@@ -75,10 +75,15 @@ def classify_result(page_text: str) -> tuple[str, str]:
     """
     画面の文言から結果を大まかに分類する。
 
-    サイトの正確な成功・失敗メッセージが判明したら、
-    後でこの判定を調整する。
+    Server busy は一時的なサーバー混雑として別判定し、
+    redeem_for_player 側で再試行する。
     """
     normalized = page_text.casefold()
+
+    server_busy_words = (
+        "server busy. please try again later.",
+        "server busy",
+    )
 
     already_words = (
         "already redeemed",
@@ -104,6 +109,9 @@ def classify_result(page_text: str) -> tuple[str, str]:
         "please check your mail for rewards",
     )
 
+    if any(word in normalized for word in server_busy_words):
+        return "server_busy", "サーバー混雑を検出しました。再試行します。"
+
     if any(word in normalized for word in already_words):
         return "already_redeemed", "すでに交換済みの可能性があります。"
 
@@ -114,6 +122,36 @@ def classify_result(page_text: str) -> tuple[str, str]:
         return "success", "交換成功を示す文言が検出されました。"
 
     return "unknown", "結果を自動判定できませんでした。"
+
+
+def close_server_busy_popup(page: Page) -> None:
+    """
+    Server busy のポップアップが表示されている場合だけ閉じる。
+
+    ポップアップの文言を基準に近くの Confirm を探す。
+    見つからない場合は Escape も試す。
+    """
+    busy_text = page.get_by_text(
+        re.compile(r"Server busy\. Please try again later\.", re.IGNORECASE)
+    )
+
+    if busy_text.count() == 0:
+        return
+
+    try:
+        popup = busy_text.first.locator("xpath=ancestor::*[.//button or .//*[normalize-space()='Confirm']][1]")
+        confirm = popup.get_by_text("Confirm", exact=True)
+
+        if confirm.count() > 0:
+            confirm.first.click(force=True, timeout=5_000)
+            return
+    except Exception:
+        pass
+
+    try:
+        page.keyboard.press("Escape")
+    except Exception:
+        pass
 
 
 def redeem_for_player(
@@ -185,27 +223,77 @@ def redeem_for_player(
                 message="入力確認のみ。Confirmは未実行です。",
             )
 
-        confirm_text = page.get_by_text(
-            "Confirm",
-            exact=True,
-        )
+        # 初回 + 最大3回再試行
+        max_retries = 3
+        retry_delays = (5, 10, 20)
 
-        if confirm_text.count() == 0:
-            raise RuntimeError(
-                "Confirmの文字が見つかりませんでした。"
+        status = "unknown"
+        message = "結果を自動判定できませんでした。"
+        page_text = ""
+
+        for attempt in range(max_retries + 1):
+            # 再試行時は入力欄を必ず入れ直す
+            if attempt > 0:
+                fill_input(page, "Player ID", 0, player_id)
+                fill_input(page, "Kingdom", 1, kingdom)
+                fill_input(page, "Gift Code", 2, gift_code)
+
+            confirm_text = page.get_by_text(
+                "Confirm",
+                exact=True,
             )
 
-        confirm_text.first.click(
-            force=True,
-            timeout=15_000,
-        )
+            if confirm_text.count() == 0:
+                raise RuntimeError(
+                    "Confirmの文字が見つかりませんでした。"
+                )
 
-        # 結果表示を待つ
-        time.sleep(5)
+            # 通常フォーム側の Confirm を優先して押す。
+            # Server busy ポップアップはこの時点では閉じてある想定。
+            confirm_text.last.click(
+                force=True,
+                timeout=15_000,
+            )
 
-        print("========== PAGE TEXT ==========")
-        print(page.locator("body").inner_text())
-        print("===============================")
+            # 結果表示を待つ
+            time.sleep(5)
+
+            print("========== PAGE TEXT ==========")
+            print(page.locator("body").inner_text())
+            print("===============================")
+
+            page_text = get_page_text(page, player_id)
+            status, message = classify_result(page_text)
+
+            print(f"Attempt: {attempt + 1}/{max_retries + 1}")
+            print(f"Result: {status}")
+            print(f"Message: {message}")
+
+            if status != "server_busy":
+                break
+
+            # server_busy の場合のみ再試行
+            if attempt >= max_retries:
+                message = (
+                    "サーバー混雑が続いたため、"
+                    f"{max_retries}回の再試行後も交換できませんでした。"
+                )
+                break
+
+            retry_delay = retry_delays[
+                min(attempt, len(retry_delays) - 1)
+            ]
+
+            print(
+                f"Server busy detected. "
+                f"{retry_delay}秒後に再入力して再試行します。"
+            )
+
+            # ポップアップを閉じる
+            close_server_busy_popup(page)
+
+            # サーバーに連打しないよう待機
+            time.sleep(retry_delay)
 
         after_path = RESULTS_DIR / (
             f"{player_number:03d}-{filename_name}-after.png"
@@ -216,8 +304,6 @@ def redeem_for_player(
             full_page=True,
         )
 
-        page_text = get_page_text(page, player_id)
-
         text_path = RESULTS_DIR / (
             f"{player_number:03d}-{filename_name}-result.txt"
         )
@@ -227,10 +313,8 @@ def redeem_for_player(
             encoding="utf-8",
         )
 
-        status, message = classify_result(page_text)
-
-        print(f"Result: {status}")
-        print(f"Message: {message}")
+        print(f"Final result: {status}")
+        print(f"Final message: {message}")
 
         return RedeemResult(
             name=name,
