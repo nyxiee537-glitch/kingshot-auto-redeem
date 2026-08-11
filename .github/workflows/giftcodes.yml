@@ -1,9 +1,6 @@
 name: 537 Gift Bot
 
 on:
-  schedule:
-    # 15分ごと。毎時00分の混雑を避けるため7分ずらしています。
-    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
 
 permissions:
