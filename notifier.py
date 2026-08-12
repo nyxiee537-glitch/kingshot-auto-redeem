@@ -113,7 +113,7 @@ def send_redeem_notification(
     lines.extend(
         [
             "",
-            "📎 詳細結果を添付しています。",
+            "📎 詳細結果",
         ]
     )
 
