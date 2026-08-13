@@ -6,6 +6,8 @@ on:
 permissions:
   contents: write
 
+# 同じ Gift Bot を同時に走らせない。
+# Cron-job が15分後に再度起動しても、前のRunが終わるまで待機する。
 concurrency:
   group: kingshot-537-giftbot
   cancel-in-progress: false
@@ -32,19 +34,26 @@ jobs:
           pip install -r requirements.txt
           playwright install --with-deps chromium
 
-      - name: Check sources and redeem
-        env:
-          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
-          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
-          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          DRY_RUN: "false"
-        run: python check_codes.py
-
-      - name: Persist seen codes
-        if: always()
+      # Cron-job からこのRunが呼ばれてから待機していた場合でも、
+      # check_codes.py を動かす直前に main の最新 state を取り直す。
+      - name: Sync latest repository state
         run: |
-          if git diff --quiet -- seen_codes.json; then
+          git fetch origin main
+          git reset --hard origin/main
+
+      # 1) 新コードを検出
+      # 2) seen_codes.json の processing_codes に先に登録
+      # 3) pending_codes.json に「このRunで処理するコード」を保存
+      - name: Claim new gift codes
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python check_codes.py --claim
+
+      # 実際の交換を始める「前」に processing 状態をGitHubへ保存。
+      # これにより次のCronが来ても同じコードを新規扱いしない。
+      - name: Persist claimed state
+        run: |
+          if [[ -z "$(git status --porcelain -- seen_codes.json)" ]]; then
             echo "seen_codes.json に変更なし"
             exit 0
           fi
@@ -53,9 +62,39 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add seen_codes.json
-          git commit -m "chore: update seen gift codes"
-          git pull --rebase
-          git push
+          git commit -m "chore: claim gift codes"
+
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      # このRun自身が claim したコードだけ交換する。
+      - name: Redeem claimed gift codes
+        env:
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DRY_RUN: "false"
+        run: python check_codes.py --redeem-pending
+
+      # 成功したコードは processing -> seen に移動。
+      # 一時エラーなら processing を解除して、次のCronで再試行可能にする。
+      - name: Persist final state
+        if: always()
+        run: |
+          if [[ -z "$(git status --porcelain -- seen_codes.json)" ]]; then
+            echo "seen_codes.json に変更なし"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add seen_codes.json
+          git commit -m "chore: finalize gift code state"
+
+          git pull --rebase origin main
+          git push origin HEAD:main
 
       - name: Upload redeem results
         if: always()
