@@ -185,7 +185,7 @@ def main() -> int:
 
         processed, summary = run_redeemer(code)
 
-        summary_counts = summary.get("summary", {})
+        summary_counts = summary.get("counts", {})
         success_count = int(summary_counts.get("success", 0))
         already_count = int(
             summary_counts.get("already_redeemed", 0)
