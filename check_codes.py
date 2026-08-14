@@ -89,17 +89,42 @@ def run_redeemer(code: str) -> tuple[bool, dict]:
         "unknown",
     }
 
+    terminal_statuses = {
+        "success",
+        "already_redeemed",
+        "failed",
+    }
+
+    results = summary.get("results", [])
+
     has_retryable = any(
         item.get("status") in retryable_statuses
-        for item in summary.get("results", [])
+        for item in results
     )
 
-    # failed は無効/期限切れ等も含むため、
-    # server_busy/unknown のような一時エラーだけ15分後再試行する。
-    fully_processed = (
-        completed.returncode == 0
-        and not has_retryable
+    has_unexpected_status = any(
+        item.get("status")
+        not in (retryable_statuses | terminal_statuses)
+        for item in results
     )
+
+    # success / already_redeemed / failed は確定結果として扱う。
+    # redeem.py が「全員 failed」で非0終了しても、
+    # server_busy / unknown が残っていなければ Seen に保存する。
+    #
+    # 再試行するのは server_busy / unknown、
+    # または想定外ステータス・結果なしの場合だけ。
+    fully_processed = (
+        bool(results)
+        and not has_retryable
+        and not has_unexpected_status
+    )
+
+    if completed.returncode != 0 and fully_processed:
+        print(
+            "[INFO] redeem.py は非0終了でしたが、"
+            "結果はすべて確定ステータスのため処理済みとして扱います。"
+        )
 
     return fully_processed, summary
 
@@ -162,8 +187,12 @@ def main() -> int:
 
         summary_counts = summary.get("summary", {})
         success_count = int(summary_counts.get("success", 0))
-        already_count = int(summary_counts.get("already_redeemed", 0))
+        already_count = int(
+            summary_counts.get("already_redeemed", 0)
+        )
 
+        # Success / Already Redeemed が1件もない場合は
+        # 一時的にDiscord通知を送らない。
         if success_count > 0 or already_count > 0:
             try:
                 send_redeem_notification(
@@ -173,7 +202,9 @@ def main() -> int:
                     summary_file=SUMMARY_TEXT_FILE,
                 )
             except Exception as exc:
-                print(f"[WARN] Discord notification failed: {exc}")
+                print(
+                    f"[WARN] Discord notification failed: {exc}"
+                )
         else:
             print(
                 "Discord通知をスキップしました "
