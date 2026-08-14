@@ -160,15 +160,25 @@ def main() -> int:
 
         processed, summary = run_redeemer(code)
 
-        try:
-            send_redeem_notification(
-                code=code,
-                sources=detected_by,
-                summary=summary,
-                summary_file=SUMMARY_TEXT_FILE,
+        summary_counts = summary.get("summary", {})
+        success_count = int(summary_counts.get("success", 0))
+        already_count = int(summary_counts.get("already_redeemed", 0))
+
+        if success_count > 0 or already_count > 0:
+            try:
+                send_redeem_notification(
+                    code=code,
+                    sources=detected_by,
+                    summary=summary,
+                    summary_file=SUMMARY_TEXT_FILE,
+                )
+            except Exception as exc:
+                print(f"[WARN] Discord notification failed: {exc}")
+        else:
+            print(
+                "Discord通知をスキップしました "
+                "(Success=0, AlreadyRedeemed=0)"
             )
-        except Exception as exc:
-            print(f"[WARN] Discord notification failed: {exc}")
 
         if processed:
             seen.add(code)
