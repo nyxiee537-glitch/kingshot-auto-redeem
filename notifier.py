@@ -99,15 +99,8 @@ def send_redeem_notification(
         lines.append(f"🧪 Dry Run: **{len(dry_run)}人**")
 
     if already:
-        lines.extend(
-            [
-                "",
-                f"☑️ **Already Redeemed ({len(already)})**",
-            ]
-        )
-        lines.extend(
-            f"• {item.get('name', 'Unknown')}"
-            for item in already
+        lines.append(
+            f"☑️ Already Redeemed: **{len(already)}人**"
         )
 
     if problems:
@@ -138,7 +131,7 @@ def send_redeem_notification(
             "content": "\n".join(lines),
             "allowed_mentions": {"parse": []},
         },
-        attachment=summary_file,
+        attachment=None if is_restricted_code else summary_file,
     )
 
 
