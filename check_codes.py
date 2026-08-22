@@ -93,6 +93,7 @@ def run_redeemer(code: str) -> tuple[bool, dict]:
         "success",
         "already_redeemed",
         "failed",
+        "requirements_not_met",
     }
 
     results = summary.get("results", [])
