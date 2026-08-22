@@ -77,6 +77,12 @@ def classify_result(page_text: str) -> tuple[str, str]:
     ):
         return "server_busy", "サーバー混雑のため再試行対象です。"
 
+    if "does not currently meet the redemption requirements" in normalized:
+        return (
+            "requirements_not_met",
+            "交換条件を満たしていません（VIP限定等の可能性）。",
+        )
+
     already_words = (
         "already redeemed",
         "already used",
