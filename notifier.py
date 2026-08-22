@@ -57,6 +57,9 @@ def send_redeem_notification(
 
     success = [r for r in results if r.get("status") == "success"]
     already = [r for r in results if r.get("status") == "already_redeemed"]
+    requirements_not_met = [
+        r for r in results if r.get("status") == "requirements_not_met"
+    ]
     dry_run = [r for r in results if r.get("status") == "dry_run"]
 
     problem_statuses = {
@@ -71,14 +74,26 @@ def send_redeem_notification(
 
     source_text = " / ".join(sources) if sources else "不明"
 
+    is_restricted_code = bool(requirements_not_met)
+    title = (
+        "👑 **VIP / Restricted Gift Code Detected**"
+        if is_restricted_code
+        else "🎁 **New Gift Code Detected**"
+    )
+
     lines = [
-        "🎁 **New Gift Code Detected**",
+        title,
         f"**Code:** `{code}`",
         f"**Source:** {source_text}",
         "",
         f"👥 対象: **{len(results)}人**",
         f"✅ Success: **{len(success)}人**",
     ]
+
+    if requirements_not_met:
+        lines.append(
+            f"👑 Requirements Not Met: **{len(requirements_not_met)}人**"
+        )
 
     if dry_run:
         lines.append(f"🧪 Dry Run: **{len(dry_run)}人**")
