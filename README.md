@@ -1,2 +1,2 @@
-# kingshot-auto-redeem
-Automatically redeem new KingShot gift codes
+# KS-auto-redeem
+Automatically redeem new KS gift codes
