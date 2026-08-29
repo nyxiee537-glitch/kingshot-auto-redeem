@@ -66,33 +66,52 @@ def property_text(prop: dict[str, Any]) -> str:
 
 
 def get_active_players(data_source_id: str) -> list[dict[str, str]]:
-    response = requests.post(
-        f"{NOTION_API}/data_sources/{data_source_id}/query",
-        headers=notion_headers(),
-        json={
+    players: list[dict[str, str]] = []
+    cursor = None
+
+    while True:
+        payload = {
             "filter": {
                 "property": "Checkbox",
                 "checkbox": {"equals": True},
-            }
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
+            },
+            "page_size": 100,
+        }
 
-    players: list[dict[str, str]] = []
+        if cursor:
+            payload["start_cursor"] = cursor
 
-    for page in response.json().get("results", []):
-        props = page["properties"]
-
-        players.append(
-            {
-                "name": title_text(props["HN"]),
-                "player_id": property_text(props["PlayerID"]),
-                "kingdom": property_text(props["Kingdom"]),
-            }
+        response = requests.post(
+            f"{NOTION_API}/data_sources/{data_source_id}/query",
+            headers=notion_headers(),
+            json=payload,
+            timeout=30,
         )
 
+        response.raise_for_status()
+        data = response.json()
+
+        for page in data.get("results", []):
+            props = page["properties"]
+
+            players.append(
+                {
+                    "name": title_text(props["HN"]),
+                    "player_id": property_text(props["PlayerID"]),
+                    "kingdom": property_text(props["Kingdom"]),
+                }
+            )
+
+        if not data.get("has_more"):
+            break
+
+        cursor = data.get("next_cursor")
+
+        if not cursor:
+            break
+
     return players
+    
 
 
 def main() -> None:
