@@ -40,6 +40,30 @@ def _post_webhook(
     response.raise_for_status()
 
 
+def send_detection_notification(
+    code: str,
+    sources: list[str],
+) -> None:
+    """新しいコードを検出し、自動交換を開始することを通知する。"""
+    source_text = " / ".join(sources) if sources else "不明"
+
+    lines = [
+        "🎁 **新しいギフトコードを検出しました**",
+        f"**コード：** `{code}`",
+        f"**検出元：** {source_text}",
+        "",
+        "🔄 自動交換を開始します…",
+    ]
+
+    _post_webhook(
+        {
+            "username": "537 Gift Bot",
+            "content": "\n".join(lines),
+            "allowed_mentions": {"parse": []},
+        }
+    )
+
+
 def send_redeem_notification(
     code: str,
     sources: list[str],
@@ -76,38 +100,38 @@ def send_redeem_notification(
 
     is_restricted_code = bool(requirements_not_met)
     title = (
-        "👑 **VIP / Restricted Gift Code Detected**"
+        "👑 **VIP・条件付きギフトコードの交換が完了しました**"
         if is_restricted_code
-        else "🎁 **New Gift Code Detected**"
+        else "✅ **ギフトコードの自動交換が完了しました**"
     )
 
     lines = [
         title,
-        f"**Code:** `{code}`",
-        f"**Source:** {source_text}",
+        f"**コード：** `{code}`",
+        f"**検出元：** {source_text}",
         "",
-        f"👥 対象: **{len(results)}人**",
-        f"✅ Success: **{len(success)}人**",
+        f"👥 対象：**{len(results)}人**",
+        f"✅ 交換成功：**{len(success)}人**",
     ]
 
     if requirements_not_met:
         lines.append(
-            f"👑 Requirements Not Met: **{len(requirements_not_met)}人**"
+            f"👑 条件未達：**{len(requirements_not_met)}人**"
         )
 
     if dry_run:
-        lines.append(f"🧪 Dry Run: **{len(dry_run)}人**")
+        lines.append(f"🧪 テスト実行：**{len(dry_run)}人**")
 
     if already:
         lines.append(
-            f"☑️ Already Redeemed: **{len(already)}人**"
+            f"☑️ 交換済み：**{len(already)}人**"
         )
 
     if problems:
         lines.extend(
             [
                 "",
-                f"❌ **Attention ({len(problems)})**",
+                f"❌ **要確認（{len(problems)}人）**",
             ]
         )
 
@@ -118,12 +142,14 @@ def send_redeem_notification(
             if message:
                 lines.append(f"  └ {message}")
 
-    lines.extend(
-        [
-            "",
-            "📎 詳細結果",
-        ]
-    )
+    # VIP／条件付きコードでは対象外ユーザーの一覧を添付しない。
+    if not is_restricted_code:
+        lines.extend(
+            [
+                "",
+                "📎 詳細結果",
+            ]
+        )
 
     _post_webhook(
         {
@@ -140,7 +166,7 @@ def send_source_error_notification(errors: dict[str, str]) -> None:
         return
 
     lines = [
-        "⚠️ **537 Gift Bot - Source Error**",
+        "⚠️ **537 Gift Bot・取得元エラー**",
         "ギフトコード取得元でエラーが発生しました。",
         "",
     ]
