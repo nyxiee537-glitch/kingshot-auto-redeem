@@ -11,22 +11,23 @@ from config import (
     SUMMARY_TEXT_FILE,
 )
 from notifier import (
+    send_detection_notification,
     send_redeem_notification,
     send_source_error_notification,
 )
 from sources import collect_sources
 
 
-def load_state() -> tuple[bool, set[str]]:
+def load_state() -> tuple[bool, set[str], set[str]]:
     if not SEEN_CODES_FILE.exists():
-        return False, set()
+        return False, set(), set()
 
     try:
         data = json.loads(
             SEEN_CODES_FILE.read_text(encoding="utf-8")
         )
     except (json.JSONDecodeError, OSError):
-        return False, set()
+        return False, set(), set()
 
     initialized = bool(data.get("initialized", False))
     seen = {
@@ -34,20 +35,31 @@ def load_state() -> tuple[bool, set[str]]:
         for code in data.get("seen_codes", [])
         if str(code).strip()
     }
+    announced = {
+        str(code).strip()
+        for code in data.get("announced_codes", [])
+        if str(code).strip()
+    }
 
-    return initialized, seen
+    return initialized, seen, announced
 
 
 def save_state(
     codes: set[str],
     initialized: bool = True,
+    announced_codes: set[str] | None = None,
 ) -> None:
+    announced_codes = announced_codes or set()
     SEEN_CODES_FILE.write_text(
         json.dumps(
             {
                 "initialized": initialized,
                 "seen_codes": sorted(
                     codes,
+                    key=str.casefold,
+                ),
+                "announced_codes": sorted(
+                    announced_codes,
                     key=str.casefold,
                 ),
             },
@@ -149,12 +161,16 @@ def main() -> int:
     for codes in sources.values():
         all_codes.update(codes)
 
-    initialized, seen = load_state()
+    initialized, seen, announced = load_state()
 
     # 初回は現在掲載中のコードを基準値として保存。
     # 既存コードを突然全員へ交換しないための安全策。
     if not initialized:
-        save_state(all_codes, initialized=True)
+        save_state(
+            all_codes,
+            initialized=True,
+            announced_codes=all_codes,
+        )
         print(
             "[BOOTSTRAP] 現在のコードを初期値として保存しました。"
             "交換処理は行いません。"
@@ -183,6 +199,24 @@ def main() -> int:
             f"\nNEW: {code} | "
             f"source: {', '.join(detected_by)}"
         )
+
+        # 一時エラーで次回再試行する場合も、検出通知は重複させない。
+        if code not in announced:
+            try:
+                send_detection_notification(
+                    code=code,
+                    sources=detected_by,
+                )
+                announced.add(code)
+                save_state(
+                    seen,
+                    initialized=True,
+                    announced_codes=announced,
+                )
+            except Exception as exc:
+                print(
+                    f"[WARN] Discord detection notification failed: {exc}"
+                )
 
         processed, summary = run_redeemer(code)
 
@@ -214,7 +248,11 @@ def main() -> int:
 
         if processed:
             seen.add(code)
-            save_state(seen, initialized=True)
+            save_state(
+                seen,
+                initialized=True,
+                announced_codes=announced,
+            )
             print(f"✅ Seenに保存: {code}")
         else:
             print(
