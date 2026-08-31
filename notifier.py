@@ -47,13 +47,15 @@ def send_detection_notification(
     """新しいコードを検出し、自動交換を開始することを通知する。"""
     source_text = " / ".join(sources) if sources else "不明"
 
-    lines = [
-        "🎁 **新しいギフトコードを検出しました**",
-        f"**コード：** `{code}`",
-        f"**検出元：** {source_text}",
-        "",
-        "🔄 自動交換を開始します…",
-    ]
+lines = [
+    "@everyone",
+    "",
+    "🎁 **新しいギフトコードを検出しました**",
+    f"**コード：** `{code}`",
+    f"**検出元：** {source_text}",
+    "",
+    "🔄 自動交換を開始します…",
+]
 
     _post_webhook(
         {
