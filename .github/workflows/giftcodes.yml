@@ -7,7 +7,7 @@ permissions:
   contents: write
 
 # 同じ Gift Bot を同時に走らせない。
-# Cron-job が15分後に再度起動しても、前のRunが終わるまで待機する。
+# Cron-job が再度起動しても、前のRunと同時に交換しない。
 concurrency:
   group: kingshot-537-giftbot
   cancel-in-progress: false
@@ -28,7 +28,21 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
+      # requests と BeautifulSoup だけで2つの取得元を確認する。
+      # 新コードがなければ、Playwright／Chromiumを入れずに終了する。
+      - name: Install lightweight monitor dependencies
+        run: pip install --disable-pip-version-check -q requests beautifulsoup4
+
+      - name: Lightweight gift-code check
+        id: quick_check
+        run: python quick_check.py
+
+      - name: No new gift codes
+        if: steps.quick_check.outputs.should_run == 'false'
+        run: echo "新しいギフトコードなし。重い交換処理をスキップします。"
+
+      - name: Install redemption dependencies
+        if: steps.quick_check.outputs.should_run == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -37,6 +51,7 @@ jobs:
       # Cron-job からこのRunが呼ばれてから待機していた場合でも、
       # check_codes.py を動かす直前に main の最新 state を取り直す。
       - name: Sync latest repository state
+        if: steps.quick_check.outputs.should_run == 'true'
         run: |
           git fetch origin main
           git reset --hard origin/main
@@ -45,6 +60,7 @@ jobs:
       # 2) seen_codes.json の processing_codes に先に登録
       # 3) pending_codes.json に「このRunで処理するコード」を保存
       - name: Claim new gift codes
+        if: steps.quick_check.outputs.should_run == 'true'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python check_codes.py --claim
@@ -52,6 +68,7 @@ jobs:
       # 実際の交換を始める「前」に processing 状態をGitHubへ保存。
       # これにより次のCronが来ても同じコードを新規扱いしない。
       - name: Persist claimed state
+        if: steps.quick_check.outputs.should_run == 'true'
         run: |
           if [[ -z "$(git status --porcelain -- seen_codes.json)" ]]; then
             echo "seen_codes.json に変更なし"
@@ -69,6 +86,7 @@ jobs:
 
       # このRun自身が claim したコードだけ交換する。
       - name: Redeem claimed gift codes
+        if: steps.quick_check.outputs.should_run == 'true'
         env:
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
@@ -80,7 +98,7 @@ jobs:
       # 成功したコードは processing -> seen に移動。
       # 一時エラーなら processing を解除して、次のCronで再試行可能にする。
       - name: Persist final state
-        if: always()
+        if: ${{ always() && steps.quick_check.outputs.should_run == 'true' }}
         run: |
           if [[ -z "$(git status --porcelain -- seen_codes.json)" ]]; then
             echo "seen_codes.json に変更なし"
@@ -97,7 +115,7 @@ jobs:
           git push origin HEAD:main
 
       - name: Upload redeem results
-        if: always()
+        if: ${{ always() && steps.quick_check.outputs.should_run == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: redeem-results-${{ github.run_number }}
