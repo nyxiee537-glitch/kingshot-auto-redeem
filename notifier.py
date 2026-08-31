@@ -61,7 +61,7 @@ lines = [
         {
             "username": "537 Gift Bot",
             "content": "\n".join(lines),
-            "allowed_mentions": {"parse": []},
+            "allowed_mentions": {"parse": ["everyone"]},
         }
     )
 
