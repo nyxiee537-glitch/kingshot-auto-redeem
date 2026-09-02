@@ -25,6 +25,7 @@ MAX_SERVER_BUSY_RETRIES = 3
 SERVER_BUSY_RETRY_DELAYS = (5, 10, 20)
 RESULT_WAIT_SECONDS = 5
 PLAYER_INTERVAL_SECONDS = 3
+PARALLEL_WORKERS = 2
 
 # Runtime
 DRY_RUN = os.environ.get("DRY_RUN", "false").strip().casefold() in {
