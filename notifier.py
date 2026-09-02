@@ -181,25 +181,3 @@ def send_source_error_notification(errors: dict[str, str]) -> None:
             "allowed_mentions": {"parse": []},
         }
     )
-
-
-def send_source_recovery_notification(sources: list[str]) -> None:
-    if not sources:
-        return
-
-    lines = [
-        "✅ **537 Gift Bot・取得元復旧**",
-        "次のギフトコード取得元が正常に戻りました。",
-        "",
-    ]
-
-    for source in sources:
-        lines.append(f"• **{source}**")
-
-    _post_webhook(
-        {
-            "username": "537 Gift Bot",
-            "content": "\n".join(lines),
-            "allowed_mentions": {"parse": []},
-        }
-    )
