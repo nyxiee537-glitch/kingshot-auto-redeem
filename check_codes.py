@@ -14,20 +14,21 @@ from notifier import (
     send_detection_notification,
     send_redeem_notification,
     send_source_error_notification,
+    send_source_recovery_notification,
 )
 from sources import collect_sources
 
 
-def load_state() -> tuple[bool, set[str], set[str]]:
+def load_state() -> tuple[bool, set[str], set[str], set[str]]:
     if not SEEN_CODES_FILE.exists():
-        return False, set(), set()
+        return False, set(), set(), set()
 
     try:
         data = json.loads(
             SEEN_CODES_FILE.read_text(encoding="utf-8")
         )
     except (json.JSONDecodeError, OSError):
-        return False, set(), set()
+        return False, set(), set(), set()
 
     initialized = bool(data.get("initialized", False))
     seen = {
@@ -40,16 +41,23 @@ def load_state() -> tuple[bool, set[str], set[str]]:
         for code in data.get("announced_codes", [])
         if str(code).strip()
     }
+    failing_sources = {
+        str(source).strip()
+        for source in data.get("failing_sources", [])
+        if str(source).strip()
+    }
 
-    return initialized, seen, announced
+    return initialized, seen, announced, failing_sources
 
 
 def save_state(
     codes: set[str],
     initialized: bool = True,
     announced_codes: set[str] | None = None,
+    failing_sources: set[str] | None = None,
 ) -> None:
     announced_codes = announced_codes or set()
+    failing_sources = failing_sources or set()
     SEEN_CODES_FILE.write_text(
         json.dumps(
             {
@@ -60,6 +68,10 @@ def save_state(
                 ),
                 "announced_codes": sorted(
                     announced_codes,
+                    key=str.casefold,
+                ),
+                "failing_sources": sorted(
+                    failing_sources,
                     key=str.casefold,
                 ),
             },
@@ -143,14 +155,42 @@ def run_redeemer(code: str) -> tuple[bool, dict]:
 
 
 def main() -> int:
+    initialized, seen, announced, previous_failures = load_state()
     sources, errors = collect_sources()
+    current_failures = set(errors)
+    new_failures = current_failures - previous_failures
+    recovered_sources = previous_failures - current_failures
 
-    if errors:
-        # 片方だけ失敗した場合も警告を出す。
+    if new_failures:
+        # 同じ取得元の連続エラーは通知せず、最初の1回だけ警告する。
         try:
-            send_source_error_notification(errors)
+            send_source_error_notification(
+                {source: errors[source] for source in new_failures}
+            )
         except Exception as exc:
             print(f"[WARN] Discord source-error notification failed: {exc}")
+
+    if recovered_sources:
+        try:
+            send_source_recovery_notification(
+                sorted(recovered_sources, key=str.casefold)
+            )
+        except Exception as exc:
+            print(f"[WARN] Discord source-recovery notification failed: {exc}")
+
+    if current_failures and not new_failures:
+        print(
+            "[INFO] 取得元エラーは継続中です。"
+            "Discordへの重複通知をスキップしました。"
+        )
+
+    # エラー状態はコード状態と同じファイルに保存し、次回実行へ引き継ぐ。
+    save_state(
+        seen,
+        initialized=initialized,
+        announced_codes=announced,
+        failing_sources=current_failures,
+    )
 
     if not sources:
         print("[ERROR] 全取得元が失敗しました。")
@@ -161,8 +201,6 @@ def main() -> int:
     for codes in sources.values():
         all_codes.update(codes)
 
-    initialized, seen, announced = load_state()
-
     # 初回は現在掲載中のコードを基準値として保存。
     # 既存コードを突然全員へ交換しないための安全策。
     if not initialized:
@@ -170,6 +208,7 @@ def main() -> int:
             all_codes,
             initialized=True,
             announced_codes=all_codes,
+            failing_sources=current_failures,
         )
         print(
             "[BOOTSTRAP] 現在のコードを初期値として保存しました。"
@@ -212,6 +251,7 @@ def main() -> int:
                     seen,
                     initialized=True,
                     announced_codes=announced,
+                    failing_sources=current_failures,
                 )
             except Exception as exc:
                 print(
@@ -252,6 +292,7 @@ def main() -> int:
                 seen,
                 initialized=True,
                 announced_codes=announced,
+                failing_sources=current_failures,
             )
             print(f"✅ Seenに保存: {code}")
         else:
