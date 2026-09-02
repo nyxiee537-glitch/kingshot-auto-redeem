@@ -48,8 +48,6 @@ def send_detection_notification(
     source_text = " / ".join(sources) if sources else "不明"
 
     lines = [
-        "@everyone",
-        "",
         "🎁 **新しいギフトコードを検出しました**",
         f"**コード：** `{code}`",
         f"**検出元：** {source_text}",
@@ -61,7 +59,7 @@ def send_detection_notification(
         {
             "username": "537 Gift Bot",
             "content": "\n".join(lines),
-            "allowed_mentions": {"parse": ["everyone"]},
+            "allowed_mentions": {"parse": []},
         }
     )
 
