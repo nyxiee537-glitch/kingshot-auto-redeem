@@ -228,7 +228,7 @@ def main() -> int:
 
         # Success / Already Redeemed が1件もない場合は
         # 一時的にDiscord通知を送らない。
-        if processed and (success_count > 0 or already_count > 0):
+        if success_count > 0 or already_count > 0:
             try:
                 send_redeem_notification(
                     code=code,
