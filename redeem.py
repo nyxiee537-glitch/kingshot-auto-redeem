@@ -4,6 +4,7 @@ import json
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from playwright.sync_api import Page, sync_playwright
 
 from config import (
     MAX_SERVER_BUSY_RETRIES,
+    PARALLEL_WORKERS,
     PLAYER_INTERVAL_SECONDS,
     REDEEM_URL,
     RESULT_WAIT_SECONDS,
@@ -292,6 +294,72 @@ def redeem_for_player(
         )
 
 
+def redeem_player_batch(
+    batch: list[tuple[int, dict[str, str]]],
+    gift_code: str,
+    dry_run: bool,
+    worker_number: int,
+) -> list[tuple[int, RedeemResult]]:
+    """Process one player batch in an isolated Playwright browser."""
+    batch_results: list[tuple[int, RedeemResult]] = []
+
+    print(
+        f"[Worker {worker_number}] Started with "
+        f"{len(batch)} player(s)."
+    )
+
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            page = browser.new_page(
+                viewport={"width": 1450, "height": 1000}
+            )
+
+            try:
+                for position, (player_number, player) in enumerate(batch):
+                    result = redeem_for_player(
+                        page,
+                        player,
+                        gift_code,
+                        dry_run,
+                        player_number,
+                    )
+                    batch_results.append((player_number, result))
+
+                    if position < len(batch) - 1:
+                        time.sleep(PLAYER_INTERVAL_SECONDS)
+            finally:
+                browser.close()
+    except Exception as exc:
+        # Browser startup/crash errors must still produce one result per player.
+        completed_numbers = {
+            player_number for player_number, _ in batch_results
+        }
+
+        for player_number, player in batch:
+            if player_number in completed_numbers:
+                continue
+
+            name = player.get("name", "").strip() or f"Player-{player_number}"
+            player_id = player.get("player_id", "").strip()
+            batch_results.append(
+                (
+                    player_number,
+                    RedeemResult(
+                        name,
+                        mask_player_id(player_id),
+                        "failed",
+                        f"Worker {worker_number}: {exc}",
+                    ),
+                )
+            )
+
+        print(f"[Worker {worker_number}] ERROR: {exc}")
+
+    print(f"[Worker {worker_number}] Finished.")
+    return batch_results
+
+
 def save_summary(
     gift_code: str,
     dry_run: bool,
@@ -378,28 +446,37 @@ def main() -> None:
     print(f"Active players: {len(players)}")
     print(f"Dry run: {dry_run}")
 
-    results: list[RedeemResult] = []
+    worker_count = min(PARALLEL_WORKERS, len(players))
+    player_batches: list[list[tuple[int, dict[str, str]]]] = [
+        [] for _ in range(worker_count)
+    ]
 
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
-        page = browser.new_page(
-            viewport={"width": 1450, "height": 1000}
-        )
+    # Distribute players between workers while preserving their original number.
+    for index, player in enumerate(players, start=1):
+        player_batches[(index - 1) % worker_count].append((index, player))
 
-        try:
-            for index, player in enumerate(players, start=1):
-                results.append(
-                    redeem_for_player(
-                        page,
-                        player,
-                        gift_code,
-                        dry_run,
-                        index,
-                    )
-                )
-                time.sleep(PLAYER_INTERVAL_SECONDS)
-        finally:
-            browser.close()
+    print(f"Parallel workers: {worker_count}")
+
+    indexed_results: list[tuple[int, RedeemResult]] = []
+
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = [
+            executor.submit(
+                redeem_player_batch,
+                batch,
+                gift_code,
+                dry_run,
+                worker_number,
+            )
+            for worker_number, batch in enumerate(player_batches, start=1)
+        ]
+
+        for future in as_completed(futures):
+            indexed_results.extend(future.result())
+
+    # Parallel workers finish in an unpredictable order; reports remain ordered.
+    indexed_results.sort(key=lambda item: item[0])
+    results = [result for _, result in indexed_results]
 
     summary = save_summary(
         gift_code,
