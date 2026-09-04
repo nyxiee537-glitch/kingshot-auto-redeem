@@ -14,6 +14,7 @@ from config import (
     SUMMARY_TEXT_FILE,
 )
 from notifier import (
+    send_detection_notification,   
     send_redeem_notification,
     send_source_error_notification,
 )
@@ -302,6 +303,10 @@ def claim_new_codes() -> int:
             f"🔒 CLAIM: {code} | "
             f"source: {', '.join(detected_by)}"
         )
+        try:
+            send_detection_notification(code=code, sources=detected_by)
+        except Exception as exc:
+            print(f"[WARN] Discord detection notification failed: {exc}")
 
     # 交換より先に「処理中」を state に書く。
     save_state(
