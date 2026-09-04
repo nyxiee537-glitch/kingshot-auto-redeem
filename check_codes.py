@@ -14,12 +14,11 @@ from config import (
     SUMMARY_TEXT_FILE,
 )
 from notifier import (
-    send_detection_notification,   
+    send_detection_notification,
     send_redeem_notification,
     send_source_error_notification,
 )
 from sources import collect_sources
-
 
 PENDING_CODES_FILE = Path("pending_codes.json")
 
@@ -37,10 +36,8 @@ def parse_datetime(value: str) -> datetime | None:
         dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except (TypeError, ValueError):
         return None
-
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-
     return dt.astimezone(timezone.utc)
 
 
@@ -56,7 +53,6 @@ def load_state() -> tuple[bool, set[str], dict[str, str]]:
         return False, set(), {}
 
     initialized = bool(data.get("initialized", False))
-
     seen = {
         str(code).strip()
         for code in data.get("seen_codes", [])
@@ -65,7 +61,6 @@ def load_state() -> tuple[bool, set[str], dict[str, str]]:
 
     raw_processing = data.get("processing_codes", {})
     processing: dict[str, str] = {}
-
     if isinstance(raw_processing, dict):
         for code, claimed_at in raw_processing.items():
             clean_code = str(code).strip()
@@ -112,17 +107,13 @@ def remove_stale_processing(
     stale_before = now - timedelta(
         minutes=PROCESSING_STALE_MINUTES
     )
-
     stale_codes: list[str] = []
-
     for code, claimed_at in list(processing.items()):
         claimed_dt = parse_datetime(claimed_at)
-
         # 壊れた日時も stale として扱い、永久ロックを防ぐ。
         if claimed_dt is None or claimed_dt <= stale_before:
             stale_codes.append(code)
             processing.pop(code, None)
-
     return stale_codes
 
 
@@ -194,7 +185,6 @@ def run_redeemer(code: str) -> tuple[bool, dict]:
         "server_busy",
         "unknown",
     }
-
     has_retryable = any(
         item.get("status") in retryable_statuses
         for item in summary.get("results", [])
@@ -231,7 +221,6 @@ def claim_new_codes() -> int:
         return 1
 
     all_codes: set[str] = set()
-
     for codes in sources.values():
         all_codes.update(codes)
 
@@ -252,7 +241,6 @@ def claim_new_codes() -> int:
         return 0
 
     stale_codes = remove_stale_processing(processing)
-
     if stale_codes:
         print(
             "[RECOVER] 期限切れの processing を解除: "
@@ -262,7 +250,6 @@ def claim_new_codes() -> int:
         )
 
     blocked_codes = seen | set(processing)
-
     new_codes = sorted(
         all_codes - blocked_codes,
         key=str.casefold,
@@ -289,24 +276,28 @@ def claim_new_codes() -> int:
             for source_name, codes in sources.items()
             if code in codes
         ]
-
         processing[code] = claimed_at
-
         pending.append(
             {
                 "code": code,
                 "sources": detected_by,
             }
         )
-
         print(
             f"🔒 CLAIM: {code} | "
             f"source: {', '.join(detected_by)}"
         )
+        # 新規コードを検出した時点で通知する。
         try:
-            send_detection_notification(code=code, sources=detected_by)
+            send_detection_notification(
+                code=code,
+                sources=detected_by,
+            )
         except Exception as exc:
-            print(f"[WARN] Discord detection notification failed: {exc}")
+            print(
+                "[WARN] Discord detection "
+                f"notification failed: {exc}"
+            )
 
     # 交換より先に「処理中」を state に書く。
     save_state(
@@ -319,19 +310,16 @@ def claim_new_codes() -> int:
     print(
         f"✅ {len(pending)} code(s) を processing として確保しました。"
     )
-
     return 0
 
 
 def redeem_pending_codes() -> int:
     pending = load_pending_codes()
-
     if not pending:
         print("No claimed gift codes to redeem.")
         return 0
 
     initialized, seen, processing = load_state()
-
     if not initialized:
         print(
             "[ERROR] state が初期化されていません。"
@@ -341,7 +329,6 @@ def redeem_pending_codes() -> int:
 
     for item in pending:
         code = str(item.get("code", "")).strip()
-
         raw_sources = item.get("sources", [])
         detected_by = (
             [str(x) for x in raw_sources]
@@ -360,32 +347,29 @@ def redeem_pending_codes() -> int:
             f"\n▶ REDEEM: {code} | "
             f"source: {', '.join(detected_by)}"
         )
-
         processed, summary = run_redeemer(code)
-
-        try:
-            send_redeem_notification(
-                code=code,
-                sources=detected_by,
-                summary=summary,
-                summary_file=SUMMARY_TEXT_FILE,
-            )
-        except Exception as exc:
-            print(
-                "[WARN] Discord notification failed: "
-                f"{exc}"
-            )
 
         if processed:
             seen.add(code)
             processing.pop(code, None)
-
             save_state(
                 seen=seen,
                 processing=processing,
                 initialized=True,
             )
-
+            # server_busy / unknown が解消し、結果が確定した時だけ通知する。
+            try:
+                send_redeem_notification(
+                    code=code,
+                    sources=detected_by,
+                    summary=summary,
+                    summary_file=SUMMARY_TEXT_FILE,
+                )
+            except Exception as exc:
+                print(
+                    "[WARN] Discord notification failed: "
+                    f"{exc}"
+                )
             print(
                 f"✅ 完了: {code} を Seen に保存し、"
                 "processing から削除しました。"
@@ -393,17 +377,17 @@ def redeem_pending_codes() -> int:
         else:
             # 一時エラーなら processing を解除。
             # 次の Cron で再度 claim して再試行できる。
+            # ここでは通知しない（解決するまで何度も通知が飛ぶのを防ぐ）。
             processing.pop(code, None)
-
             save_state(
                 seen=seen,
                 processing=processing,
                 initialized=True,
             )
-
             print(
                 f"⏳ {code} は一時エラーが残っているため"
                 "Seenに保存しません。次回再試行します。"
+                "（通知は解消時のみ送信）"
             )
 
     return 0
@@ -411,7 +395,6 @@ def redeem_pending_codes() -> int:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument(
         "--claim",
@@ -423,19 +406,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="このRunで確保したコードを交換する",
     )
-
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-
     if args.claim:
         return claim_new_codes()
-
     if args.redeem_pending:
         return redeem_pending_codes()
-
     return 1
 
 
