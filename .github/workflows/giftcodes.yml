@@ -6,8 +6,6 @@ on:
 permissions:
   contents: write
 
-# 同じ Gift Bot を同時に走らせない。
-# Cron-job が再度起動しても、前のRunと同時に交換しない。
 concurrency:
   group: kingshot-537-giftbot
   cancel-in-progress: false
@@ -28,8 +26,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      # requests と BeautifulSoup だけで2つの取得元を確認する。
-      # 新コードがなければ、Playwright／Chromiumを入れずに終了する。
       - name: Install lightweight monitor dependencies
         run: pip install --disable-pip-version-check -q requests beautifulsoup4
 
@@ -48,25 +44,19 @@ jobs:
           pip install -r requirements.txt
           playwright install --with-deps chromium
 
-      # Cron-job からこのRunが呼ばれてから待機していた場合でも、
-      # check_codes.py を動かす直前に main の最新 state を取り直す。
       - name: Sync latest repository state
         if: steps.quick_check.outputs.should_run == 'true'
         run: |
           git fetch origin main
           git reset --hard origin/main
 
-      # 1) 新コードを検出
-      # 2) seen_codes.json の processing_codes に先に登録
-      # 3) pending_codes.json に「このRunで処理するコード」を保存
       - name: Claim new gift codes
         if: steps.quick_check.outputs.should_run == 'true'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_ERROR_WEBHOOK_URL: ${{ secrets.DISCORD_ERROR_WEBHOOK_URL }}
         run: python check_codes.py --claim
 
-      # 実際の交換を始める「前」に processing 状態をGitHubへ保存。
-      # これにより次のCronが来ても同じコードを新規扱いしない。
       - name: Persist claimed state
         if: steps.quick_check.outputs.should_run == 'true'
         run: |
@@ -77,14 +67,12 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
           git add seen_codes.json
           git commit -m "chore: claim gift codes"
 
           git pull --rebase origin main
           git push origin HEAD:main
 
-      # このRun自身が claim したコードだけ交換する。
       - name: Redeem claimed gift codes
         if: steps.quick_check.outputs.should_run == 'true'
         env:
@@ -92,11 +80,10 @@ jobs:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_ERROR_WEBHOOK_URL: ${{ secrets.DISCORD_ERROR_WEBHOOK_URL }}
           DRY_RUN: "false"
         run: python check_codes.py --redeem-pending
 
-      # 成功したコードは processing -> seen に移動。
-      # 一時エラーなら processing を解除して、次のCronで再試行可能にする。
       - name: Persist final state
         if: ${{ always() && steps.quick_check.outputs.should_run == 'true' }}
         run: |
@@ -107,7 +94,6 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
           git add seen_codes.json
           git commit -m "chore: finalize gift code state"
 
