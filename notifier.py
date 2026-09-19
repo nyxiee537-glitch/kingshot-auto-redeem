@@ -1,208 +1,108 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import requests
 
-from config import (
-    DISCORD_WEBHOOK_URL,
-    DISCORD_ERROR_WEBHOOK_URL,
-    HTTP_TIMEOUT,
-)
+from config import DISCORD_WEBHOOK_URL, HTTP_TIMEOUT
+
+ERROR_WEBHOOK_URL = os.environ.get("DISCORD_ERROR_WEBHOOK_URL", "").strip()
 
 
-def _post_webhook(
-    payload: dict,
-    webhook_url: str,
-    attachment: Path | None = None,
-) -> None:
+def _post_webhook(payload: dict, attachment: Path | None = None, *, error: bool = False) -> None:
+    webhook_url = ERROR_WEBHOOK_URL if error and ERROR_WEBHOOK_URL else DISCORD_WEBHOOK_URL
     if not webhook_url:
-        print(
-            "[INFO] Webhook URL is empty. "
-            "Discord notification skipped."
-        )
+        print("[INFO] Discord webhook is empty. Notification skipped.")
         return
 
     if attachment and attachment.exists():
         with attachment.open("rb") as file_handle:
             response = requests.post(
                 webhook_url,
-                data={
-                    "payload_json": json.dumps(
-                        payload, ensure_ascii=False
-                    )
-                },
-                files={
-                    "files[0]": (
-                        attachment.name,
-                        file_handle,
-                        "text/plain",
-                    )
-                },
+                data={"payload_json": json.dumps(payload, ensure_ascii=False)},
+                files={"files[0]": (attachment.name, file_handle, "text/plain")},
                 timeout=HTTP_TIMEOUT,
             )
     else:
-        response = requests.post(
-            webhook_url,
-            json=payload,
-            timeout=HTTP_TIMEOUT,
-        )
-
+        response = requests.post(webhook_url, json=payload, timeout=HTTP_TIMEOUT)
     response.raise_for_status()
 
 
-def send_detection_notification(
-    code: str,
-    sources: list[str],
-) -> None:
-    """新しいコードを検出し、自動交換を開始することを通知する。（通常チャンネル）"""
+def send_detection_notification(code: str, sources: list[str]) -> None:
     source_text = " / ".join(sources) if sources else "不明"
-
-    lines = [
-        "🎁 **新しいギフトコードを検出しました**",
-        f"**コード：** `{code}`",
-        f"**検出元：** {source_text}",
-        "",
-        "🔄 自動交換を開始します…",
-    ]
-
-    _post_webhook(
-        {
-            "username": "537 Gift Bot",
-            "content": "\n".join(lines),
-            "allowed_mentions": {"parse": []},
-        },
-        webhook_url=DISCORD_WEBHOOK_URL,
-    )
+    _post_webhook({
+        "username": "537 Gift Bot",
+        "content": (
+            "🎁 **新しいギフトコードを検出しました**\n"
+            f"**Code:** `{code}`\n"
+            f"**Source:** {source_text}\n\n"
+            "🔄 登録アカウントへの交換を開始します。"
+        ),
+        "allowed_mentions": {"parse": []},
+    })
 
 
-def send_redeem_notification(
-    code: str,
-    sources: list[str],
-    summary: dict,
-    summary_file: Path,
-) -> None:
-    """
-    Discord本文（通常チャンネル）:
-    - Success は人数のみ
-    - Already Redeemed はユーザー名
-    - Failed / Server Busy / Unknown はユーザー名 + 理由
-    - 詳細は txt を添付
-    """
+def send_redeem_notification(code: str, sources: list[str], summary: dict, summary_file: Path) -> None:
     results = summary.get("results", [])
-
-    success = [r for r in results if r.get("status") == "success"]
-    already = [
-        r for r in results if r.get("status") == "already_redeemed"
-    ]
-    requirements_not_met = [
-        r
-        for r in results
-        if r.get("status") == "requirements_not_met"
-    ]
-    dry_run = [r for r in results if r.get("status") == "dry_run"]
-
-    problem_statuses = {
-        "failed",
-        "server_busy",
-        "unknown",
-    }
-    problems = [
-        r for r in results if r.get("status") in problem_statuses
-    ]
-
+    by_status = lambda status: [r for r in results if r.get("status") == status]
+    success = by_status("success")
+    already = by_status("already_redeemed")
+    requirements = by_status("requirements_not_met")
+    moved = by_status("kingdom_changed")
+    failed = by_status("failed")
     source_text = " / ".join(sources) if sources else "不明"
-    is_restricted_code = bool(requirements_not_met)
-
-    title = (
-        "👑 **VIP・条件付きギフトコードの交換が完了しました**"
-        if is_restricted_code
-        else "✅ **ギフトコードの自動交換が完了しました**"
-    )
 
     lines = [
-        title,
-        f"**コード：** `{code}`",
-        f"**検出元：** {source_text}",
-        "",
-        f"👥 対象：**{len(results)}人**",
-        f"✅ 交換成功：**{len(success)}人**",
+        "👑 **537 Gift Bot・ギフトコード交換完了**",
+        f"**Code:** `{code}`",
+        f"**Source:** {source_text}", "",
+        f"👥 対象: **{len(results)}人**",
+        f"✅ Success: **{len(success)}人**",
+        f"☑️ Already: **{len(already)}人**",
+        f"🔒 条件未達: **{len(requirements)}人**",
+        f"🚫 537対象外: **{len(moved)}人**",
     ]
+    if failed:
+        lines.append(f"❌ Failed: **{len(failed)}人**")
+    lines.extend(["", "📎 詳細結果"])
 
-    if requirements_not_met:
-        lines.append(
-            f"👑 条件未達：**{len(requirements_not_met)}人**"
-        )
+    _post_webhook({
+        "username": "537 Gift Bot",
+        "content": "\n".join(lines),
+        "allowed_mentions": {"parse": []},
+    }, attachment=summary_file)
 
-    if dry_run:
-        lines.append(f"🧪 テスト実行：**{len(dry_run)}人**")
+    if moved:
+        send_kingdom_changed_notification(moved)
 
-    if already:
-        lines.append(f"☑️ 交換済み：**{len(already)}人**")
 
-    if problems:
-        lines.extend(
-            [
-                "",
-                f"❌ **要確認（{len(problems)}人）**",
-            ]
-        )
-        for item in problems:
-            name = item.get("name", "Unknown")
-            message = item.get("message", "")
-            lines.append(f"• {name}")
-            if message:
-                lines.append(f"  └ {message}")
-
-    # VIP／条件付きコードでは対象外ユーザーの一覧を添付しない。
-    if not is_restricted_code:
-        lines.extend(
-            [
-                "",
-                "📎 詳細結果",
-            ]
-        )
-
-    _post_webhook(
-        {
-            "username": "537 Gift Bot",
-            "content": "\n".join(lines),
-            "allowed_mentions": {"parse": []},
-        },
-        webhook_url=DISCORD_WEBHOOK_URL,
-        attachment=None if is_restricted_code else summary_file,
-    )
+def send_kingdom_changed_notification(players: list[dict]) -> None:
+    lines = [
+        "🚫 **537 Gift Bot・対象外アカウント**",
+        "王国情報が一致しないアカウントを検出しました。",
+        "537王国から移民した可能性があるため、今後の交換対象を確認してください。",
+        "",
+    ]
+    for item in players:
+        lines.append(f"• **{item.get('name', 'Unknown')}**")
+        lines.append(f"  └ {item.get('message', 'Character info is incorrect.')}" )
+    _post_webhook({
+        "username": "537 Gift Bot",
+        "content": "\n".join(lines),
+        "allowed_mentions": {"parse": []},
+    }, error=True)
 
 
 def send_source_error_notification(errors: dict[str, str]) -> None:
-    """取得元エラーを通知する。（エラー専用チャンネル）"""
     if not errors:
         return
-
-    lines = [
-        "⚠️ **537 Gift Bot・取得元エラー**",
-        "ギフトコード取得元でエラーが発生しました。",
-        "",
-    ]
-
+    lines = ["⚠️ **537 Gift Bot・取得元エラー**", "ギフトコード取得元でエラーが発生しました。", ""]
     for source, error in errors.items():
         lines.append(f"• **{source}**: {error[:500]}")
-
-    # DISCORD_ERROR_WEBHOOK_URL が未設定の場合は
-    # 通常チャンネルにフォールバックする（通知が完全に消えるのを防ぐため）。
-    error_webhook = DISCORD_ERROR_WEBHOOK_URL or DISCORD_WEBHOOK_URL
-    if not DISCORD_ERROR_WEBHOOK_URL:
-        print(
-            "[WARN] DISCORD_ERROR_WEBHOOK_URL が未設定のため、"
-            "通常チャンネルにフォールバックします。"
-        )
-
-    _post_webhook(
-        {
-            "username": "537 Gift Bot",
-            "content": "\n".join(lines),
-            "allowed_mentions": {"parse": []},
-        },
-        webhook_url=error_webhook,
-    )
+    _post_webhook({
+        "username": "537 Gift Bot",
+        "content": "\n".join(lines),
+        "allowed_mentions": {"parse": []},
+    }, error=True)
