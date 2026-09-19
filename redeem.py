@@ -1,145 +1,328 @@
 from __future__ import annotations
 
-import argparse
 import json
 import os
-import subprocess
-import sys
-from datetime import datetime, timedelta, timezone
+import re
+import time
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from playwright.sync_api import Page, sync_playwright
+
 from config import (
-    SEEN_CODES_FILE,
+    MAX_SERVER_BUSY_RETRIES,
+    PLAYER_INTERVAL_SECONDS,
+    REDEEM_URL,
+    RESULT_WAIT_SECONDS,
+    RESULTS_DIR,
+    SERVER_BUSY_RETRY_DELAYS,
     SUMMARY_JSON_FILE,
     SUMMARY_TEXT_FILE,
 )
-from notifier import (
-    send_detection_notification,
-    send_redeem_notification,
-    send_source_error_notification,
-)
-from sources import collect_sources
+from test_notion import get_active_players, get_data_source_id
 
 
-PENDING_CODES_FILE = Path("pending_codes.json")
-
-# GitHub Actions の timeout が 20 分なので、
-# 途中停止した処理は 30 分後から再取得できるようにする。
-PROCESSING_STALE_MINUTES = 30
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+@dataclass
+class RedeemResult:
+    name: str
+    player_id_masked: str
+    status: str
+    message: str
 
 
-def parse_datetime(value: str) -> datetime | None:
-    try:
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return None
-
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-
-    return dt.astimezone(timezone.utc)
+def mask_player_id(player_id: str) -> str:
+    if len(player_id) >= 4:
+        return f"***{player_id[-4:]}"
+    return "***"
 
 
-def load_state() -> tuple[bool, set[str], dict[str, str], set[str]]:
-    if not SEEN_CODES_FILE.exists():
-        return False, set(), {}, set()
-
-    try:
-        data = json.loads(
-            SEEN_CODES_FILE.read_text(encoding="utf-8")
-        )
-    except (json.JSONDecodeError, OSError):
-        return False, set(), {}, set()
-
-    initialized = bool(data.get("initialized", False))
-
-    seen = {
-        str(code).strip()
-        for code in data.get("seen_codes", [])
-        if str(code).strip()
-    }
-
-    raw_processing = data.get("processing_codes", {})
-    processing: dict[str, str] = {}
-
-    if isinstance(raw_processing, dict):
-        for code, claimed_at in raw_processing.items():
-            clean_code = str(code).strip()
-            clean_time = str(claimed_at).strip()
-            if clean_code and clean_time:
-                processing[clean_code] = clean_time
-
-    announced = {
-        str(code).strip()
-        for code in data.get("announced_codes", [])
-        if str(code).strip()
-    }
-
-    return initialized, seen, processing, announced
+def safe_filename(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", value.strip())
+    return cleaned or "player"
 
 
-def save_state(
-    seen: set[str],
-    processing: dict[str, str],
-    announced: set[str],
-    initialized: bool = True,
+def fill_input(
+    page: Page,
+    placeholder: str,
+    fallback_index: int,
+    value: str,
 ) -> None:
-    SEEN_CODES_FILE.write_text(
-        json.dumps(
-            {
-                "initialized": initialized,
-                "seen_codes": sorted(
-                    seen,
-                    key=str.casefold,
+    locator = page.get_by_placeholder(
+        re.compile(placeholder, re.IGNORECASE)
+    )
+
+    if locator.count() > 0:
+        locator.first.fill(value)
+        return
+
+    inputs = page.locator("input")
+
+    if inputs.count() <= fallback_index:
+        raise RuntimeError(f"入力欄が見つかりませんでした: {placeholder}")
+
+    inputs.nth(fallback_index).fill(value)
+
+
+def get_page_text(page: Page, player_id: str) -> str:
+    body_text = page.locator("body").inner_text(timeout=10_000)
+    return body_text.replace(player_id, "***PLAYER_ID***")
+
+
+def classify_result(page_text: str) -> tuple[str, str]:
+    normalized = page_text.casefold()
+
+    if (
+        "server busy. please try again later." in normalized
+        or "server busy" in normalized
+    ):
+        return "server_busy", "サーバー混雑のため再試行対象です。"
+
+    if "character info is incorrect. please confirm and try again." in normalized:
+        return (
+            "kingdom_changed",
+            "王国情報が一致しません。537王国から移民した可能性があるため対象外です。",
+        )
+
+    if "your account does not currently meet the redemption requirements" in normalized:
+        return "requirements_not_met", "現在このギフトコードの交換条件を満たしていません。"
+
+    already_words = (
+        "already redeemed",
+        "already used",
+        "already claimed",
+        "gift has already been claimed",
+        "redeemed already",
+        "the same gift code type can only be redeemed once",
+        "can only be redeemed once",
+    )
+
+    invalid_words = (
+        "invalid",
+        "expired",
+        "unable to claim",
+        "expired, unable to claim",
+        "not valid",
+        "does not exist",
+    )
+
+    success_words = (
+        "redeemed successfully",
+        "please check your mail for rewards",
+    )
+
+    if any(word in normalized for word in already_words):
+        return "already_redeemed", "すでに交換済みです。"
+
+    if any(word in normalized for word in invalid_words):
+        return "failed", "無効または期限切れの可能性があります。"
+
+    if any(word in normalized for word in success_words):
+        return "success", "交換成功。"
+
+    return "unknown", "結果を自動判定できませんでした。"
+
+
+def close_server_busy_popup(page: Page) -> None:
+    busy_text = page.get_by_text(
+        re.compile(
+            r"Server busy\. Please try again later\.",
+            re.IGNORECASE,
+        )
+    )
+
+    if busy_text.count() == 0:
+        return
+
+    try:
+        popup = busy_text.first.locator(
+            "xpath=ancestor::*[.//button or .//*[normalize-space()='Confirm']][1]"
+        )
+        confirm = popup.get_by_text("Confirm", exact=True)
+
+        if confirm.count() > 0:
+            confirm.first.click(force=True, timeout=5_000)
+            return
+    except Exception:
+        pass
+
+    try:
+        page.keyboard.press("Escape")
+    except Exception:
+        pass
+
+
+def redeem_for_player(
+    page: Page,
+    player: dict[str, str],
+    gift_code: str,
+    dry_run: bool,
+    player_number: int,
+) -> RedeemResult:
+    name = player["name"].strip() or f"Player-{player_number}"
+    player_id = player["player_id"].strip()
+    kingdom = player["kingdom"].strip()
+
+    masked_id = mask_player_id(player_id)
+    filename_name = safe_filename(name)
+
+    if not player_id:
+        return RedeemResult(name, masked_id, "failed", "Player IDが空です。")
+
+    if not kingdom:
+        return RedeemResult(name, masked_id, "failed", "Kingdomが空です。")
+
+    print(f"\n[{player_number}] Processing: {name}")
+    print(f"Player ID: {masked_id}")
+    print(f"Kingdom: {kingdom}")
+
+    try:
+        page.goto(
+            REDEEM_URL,
+            wait_until="networkidle",
+            timeout=60_000,
+        )
+
+        fill_input(page, "Player ID", 0, player_id)
+        fill_input(page, "Kingdom", 1, kingdom)
+        fill_input(page, "Gift Code", 2, gift_code)
+
+        page.screenshot(
+            path=str(
+                RESULTS_DIR
+                / f"{player_number:03d}-{filename_name}-before.png"
+            ),
+            full_page=True,
+        )
+
+        if dry_run:
+            return RedeemResult(
+                name,
+                masked_id,
+                "dry_run",
+                "入力確認のみ。Confirmは未実行です。",
+            )
+
+        status = "unknown"
+        message = "結果を自動判定できませんでした。"
+        page_text = ""
+
+        for attempt in range(MAX_SERVER_BUSY_RETRIES + 1):
+            if attempt > 0:
+                fill_input(page, "Player ID", 0, player_id)
+                fill_input(page, "Kingdom", 1, kingdom)
+                fill_input(page, "Gift Code", 2, gift_code)
+
+            confirm_text = page.get_by_text("Confirm", exact=True)
+
+            if confirm_text.count() == 0:
+                raise RuntimeError("Confirmの文字が見つかりませんでした。")
+
+            confirm_text.last.click(
+                force=True,
+                timeout=15_000,
+            )
+
+            time.sleep(RESULT_WAIT_SECONDS)
+
+            page_text = get_page_text(page, player_id)
+            status, message = classify_result(page_text)
+
+            print(
+                f"Attempt {attempt + 1}/"
+                f"{MAX_SERVER_BUSY_RETRIES + 1}: {status}"
+            )
+
+            if status != "server_busy":
+                break
+
+            if attempt >= MAX_SERVER_BUSY_RETRIES:
+                message = (
+                    "サーバー混雑が続いたため、"
+                    f"{MAX_SERVER_BUSY_RETRIES}回の再試行後も交換できませんでした。"
+                )
+                break
+
+            delay = SERVER_BUSY_RETRY_DELAYS[
+                min(attempt, len(SERVER_BUSY_RETRY_DELAYS) - 1)
+            ]
+
+            print(f"Server busy → {delay}秒後に再試行")
+            close_server_busy_popup(page)
+            time.sleep(delay)
+
+        page.screenshot(
+            path=str(
+                RESULTS_DIR
+                / f"{player_number:03d}-{filename_name}-after.png"
+            ),
+            full_page=True,
+        )
+
+        (
+            RESULTS_DIR
+            / f"{player_number:03d}-{filename_name}-result.txt"
+        ).write_text(
+            page_text,
+            encoding="utf-8",
+        )
+
+        return RedeemResult(
+            name,
+            masked_id,
+            status,
+            message,
+        )
+
+    except Exception as exc:
+        try:
+            page.screenshot(
+                path=str(
+                    RESULTS_DIR
+                    / f"{player_number:03d}-{filename_name}-error.png"
                 ),
-                "announced_codes": sorted(announced, key=str.casefold),
-                "processing_codes": {
-                    code: processing[code]
-                    for code in sorted(
-                        processing,
-                        key=str.casefold,
-                    )
-                },
-            },
-            ensure_ascii=False,
-            indent=2,
+                full_page=True,
+            )
+        except Exception:
+            pass
+
+        print(f"ERROR: {name}: {exc}")
+
+        return RedeemResult(
+            name,
+            masked_id,
+            "failed",
+            str(exc),
         )
-        + "\n",
-        encoding="utf-8",
-    )
 
 
-def remove_stale_processing(
-    processing: dict[str, str],
-) -> list[str]:
-    now = utc_now()
-    stale_before = now - timedelta(
-        minutes=PROCESSING_STALE_MINUTES
-    )
+def save_summary(
+    gift_code: str,
+    dry_run: bool,
+    results: list[RedeemResult],
+) -> dict:
+    counts: dict[str, int] = {}
 
-    stale_codes: list[str] = []
+    for result in results:
+        counts[result.status] = counts.get(result.status, 0) + 1
 
-    for code, claimed_at in list(processing.items()):
-        claimed_dt = parse_datetime(claimed_at)
+    summary = {
+        "gift_code": gift_code,
+        "dry_run": dry_run,
+        "total_players": len(results),
+        "counts": counts,
+        "results": [
+            {
+                "name": result.name,
+                "status": result.status,
+                "message": result.message,
+            }
+            for result in results
+        ],
+    }
 
-        # 壊れた日時も stale として扱い、永久ロックを防ぐ。
-        if claimed_dt is None or claimed_dt <= stale_before:
-            stale_codes.append(code)
-            processing.pop(code, None)
-
-    return stale_codes
-
-
-def save_pending_codes(
-    pending: list[dict[str, object]],
-) -> None:
-    PENDING_CODES_FILE.write_text(
+    SUMMARY_JSON_FILE.write_text(
         json.dumps(
-            pending,
+            summary,
             ensure_ascii=False,
             indent=2,
         )
@@ -147,319 +330,94 @@ def save_pending_codes(
         encoding="utf-8",
     )
 
-
-def load_pending_codes() -> list[dict[str, object]]:
-    if not PENDING_CODES_FILE.exists():
-        return []
-
-    try:
-        data = json.loads(
-            PENDING_CODES_FILE.read_text(encoding="utf-8")
-        )
-    except (json.JSONDecodeError, OSError):
-        return []
-
-    if not isinstance(data, list):
-        return []
-
-    return [
-        item
-        for item in data
-        if isinstance(item, dict)
-        and str(item.get("code", "")).strip()
+    lines = [
+        f"Gift code: {gift_code}",
+        f"Dry run: {dry_run}",
+        f"Total players: {len(results)}",
+        "",
+        "Summary:",
     ]
 
+    for status, count in sorted(counts.items()):
+        lines.append(f"- {status}: {count}")
 
-def run_redeemer(code: str) -> tuple[bool, dict]:
-    env = os.environ.copy()
-    env["GIFT_CODE"] = code
-    env.setdefault("DRY_RUN", "false")
+    lines.extend(["", "Players:"])
 
-    for path in (
-        SUMMARY_JSON_FILE,
-        SUMMARY_TEXT_FILE,
-    ):
-        if path.exists():
-            path.unlink()
+    # Discord添付用なのでPlayer IDは書かず、ユーザー名だけにする。
+    for result in results:
+        lines.append(
+            f"- {result.name} | {result.status} | {result.message}"
+        )
 
-    completed = subprocess.run(
-        [sys.executable, "redeem.py"],
-        env=env,
-        check=False,
+    SUMMARY_TEXT_FILE.write_text(
+        "\n".join(lines) + "\n",
+        encoding="utf-8",
     )
 
-    if not SUMMARY_JSON_FILE.exists():
-        return False, {}
+    return summary
 
-    try:
-        summary = json.loads(
-            SUMMARY_JSON_FILE.read_text(encoding="utf-8")
-        )
-    except (json.JSONDecodeError, OSError):
-        return False, {}
 
-    retryable_statuses = {"server_busy", "unknown"}
-    terminal_statuses = {
-        "success", "already_redeemed", "failed",
-        "requirements_not_met", "kingdom_changed", "dry_run",
+def main() -> None:
+    database_id = os.environ["NOTION_DATABASE_ID"]
+    gift_code = os.environ["GIFT_CODE"].strip()
+    dry_run = os.environ.get("DRY_RUN", "false").strip().casefold() in {
+        "true", "1", "yes", "on"
     }
-    results = summary.get("results", [])
 
-    has_retryable = any(
-        item.get("status") in retryable_statuses
-        for item in results
-    )
-    has_unexpected = any(
-        item.get("status") not in (retryable_statuses | terminal_statuses)
-        for item in results
-    )
+    if not gift_code:
+        raise RuntimeError("GIFT_CODEが空です。")
 
-    # 終了コードではなく、各プレイヤーの結果で完了判定する。
-    fully_processed = bool(results) and not has_retryable and not has_unexpected
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    if completed.returncode != 0 and fully_processed:
-        print("[INFO] redeem.py は非0終了ですが全結果が確定済みのため完了扱いです。")
+    data_source_id = get_data_source_id(database_id)
+    players = get_active_players(data_source_id)
 
-    return fully_processed, summary
+    if not players:
+        raise RuntimeError(
+            "NotionにActiveのプレイヤーがいません。"
+        )
 
+    print(f"Gift code: {gift_code}")
+    print(f"Active players: {len(players)}")
+    print(f"Dry run: {dry_run}")
 
-def claim_new_codes() -> int:
-    # 前回の pending ファイルがローカルに残っていても使わない。
-    if PENDING_CODES_FILE.exists():
-        PENDING_CODES_FILE.unlink()
+    results: list[RedeemResult] = []
 
-    sources, errors = collect_sources()
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(
+            viewport={"width": 1450, "height": 1000}
+        )
 
-    if errors:
         try:
-            send_source_error_notification(errors)
-        except Exception as exc:
-            print(
-                "[WARN] Discord source-error "
-                f"notification failed: {exc}"
-            )
-
-    if not sources:
-        print("[ERROR] 全取得元が失敗しました。")
-        return 1
-
-    all_codes: set[str] = set()
-
-    for codes in sources.values():
-        all_codes.update(codes)
-
-    initialized, seen, processing, announced = load_state()
-
-    # 初回は現在掲載中のコードを基準値として保存。
-    # 既存コードを突然全員へ交換しないための安全策。
-    if not initialized:
-        save_state(
-            seen=all_codes,
-            processing={},
-            announced=all_codes,
-            initialized=True,
-        )
-        print(
-            "[BOOTSTRAP] 現在のコードを初期値として保存しました。"
-            "交換処理は行いません。"
-        )
-        return 0
-
-    stale_codes = remove_stale_processing(processing)
-
-    if stale_codes:
-        print(
-            "[RECOVER] 期限切れの processing を解除: "
-            + ", ".join(
-                sorted(stale_codes, key=str.casefold)
-            )
-        )
-
-    blocked_codes = seen | set(processing)
-
-    new_codes = sorted(
-        all_codes - blocked_codes,
-        key=str.casefold,
-    )
-
-    if not new_codes:
-        # stale の掃除だけ発生した場合も state を保存する。
-        save_state(
-            seen=seen,
-            processing=processing,
-            announced=announced,
-            initialized=True,
-        )
-        print("No new gift codes.")
-        return 0
-
-    print(f"NEW code(s): {new_codes}")
-
-    pending: list[dict[str, object]] = []
-    claimed_at = utc_now().isoformat()
-
-    for code in new_codes:
-        detected_by = [
-            source_name
-            for source_name, codes in sources.items()
-            if code in codes
-        ]
-
-        processing[code] = claimed_at
-
-        pending.append(
-            {
-                "code": code,
-                "sources": detected_by,
-            }
-        )
-
-        print(
-            f"🔒 CLAIM: {code} | "
-            f"source: {', '.join(detected_by)}"
-        )
-
-    newly_announced = [item for item in pending if str(item["code"]) not in announced]
-    announced.update(str(item["code"]) for item in newly_announced)
-
-    # processing / announced を通知より先に保存する。
-    # Action が直後にキャンセルされても発見通知が重複しない。
-    save_state(
-        seen=seen,
-        processing=processing,
-        announced=announced,
-        initialized=True,
-    )
-    save_pending_codes(pending)
-
-    for item in newly_announced:
-        try:
-            send_detection_notification(
-                code=str(item["code"]),
-                sources=[str(x) for x in item.get("sources", [])],
-            )
-        except Exception as exc:
-            print(f"[WARN] Discord detection notification failed: {exc}")
-
-    print(
-        f"✅ {len(pending)} code(s) を processing として確保しました。"
-    )
-
-    return 0
-
-
-def redeem_pending_codes() -> int:
-    pending = load_pending_codes()
-
-    if not pending:
-        print("No claimed gift codes to redeem.")
-        return 0
-
-    initialized, seen, processing, announced = load_state()
-
-    if not initialized:
-        print(
-            "[ERROR] state が初期化されていません。"
-            "交換処理を中止します。"
-        )
-        return 1
-
-    for item in pending:
-        code = str(item.get("code", "")).strip()
-
-        raw_sources = item.get("sources", [])
-        detected_by = (
-            [str(x) for x in raw_sources]
-            if isinstance(raw_sources, list)
-            else []
-        )
-
-        # claim が state に存在しない場合は安全のため実行しない。
-        if code not in processing:
-            print(
-                f"⏭️ SKIP: {code} は processing に存在しません。"
-            )
-            continue
-
-        print(
-            f"\n▶ REDEEM: {code} | "
-            f"source: {', '.join(detected_by)}"
-        )
-
-        processed, summary = run_redeemer(code)
-
-        if processed:
-            seen.add(code)
-            processing.pop(code, None)
-
-            save_state(
-                seen=seen,
-                processing=processing,
-                announced=announced,
-                initialized=True,
-            )
-
-            print(
-                f"✅ 完了: {code} を Seen に保存し、"
-                "processing から削除しました。"
-            )
-
-            try:
-                send_redeem_notification(
-                    code=code, sources=detected_by, summary=summary,
-                    summary_file=SUMMARY_TEXT_FILE,
+            for index, player in enumerate(players, start=1):
+                results.append(
+                    redeem_for_player(
+                        page,
+                        player,
+                        gift_code,
+                        dry_run,
+                        index,
+                    )
                 )
-            except Exception as exc:
-                print(f"[WARN] Discord completion notification failed: {exc}")
-        else:
-            # 一時エラーなら processing を解除。
-            # 次の Cron で再度 claim して再試行できる。
-            processing.pop(code, None)
+                time.sleep(PLAYER_INTERVAL_SECONDS)
+        finally:
+            browser.close()
 
-            save_state(
-                seen=seen,
-                processing=processing,
-                announced=announced,
-                initialized=True,
-            )
-
-            print(
-                f"⏳ {code} は一時エラーが残っているため"
-                "Seenに保存しません。次回再試行します。"
-            )
-
-    return 0
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument(
-        "--claim",
-        action="store_true",
-        help="新コードを検出して processing として確保する",
-    )
-    mode.add_argument(
-        "--redeem-pending",
-        action="store_true",
-        help="このRunで確保したコードを交換する",
+    summary = save_summary(
+        gift_code,
+        dry_run,
+        results,
     )
 
-    return parser.parse_args()
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
 
-
-def main() -> int:
-    args = parse_args()
-
-    if args.claim:
-        return claim_new_codes()
-
-    if args.redeem_pending:
-        return redeem_pending_codes()
-
-    return 1
+    # すべて failed のときだけプロセス失敗。
+    if results and all(r.status == "failed" for r in results):
+        raise RuntimeError(
+            "すべてのプレイヤーで処理に失敗しました。"
+        )
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
