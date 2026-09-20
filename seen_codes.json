@@ -5,6 +5,7 @@
     "FB2500KT",
     "HAPPYCATDAY",
     "JP26SUMMER",
+    "JPHolidaySEP",
     "Kingshot888",
     "KS0810",
     "KS0822",
@@ -20,7 +21,5 @@
   "announced_codes": [
     "JPHolidaySEP"
   ],
-  "processing_codes": {
-    "JPHolidaySEP": "2026-09-20T09:30:49.253976+00:00"
-  }
+  "processing_codes": {}
 }
