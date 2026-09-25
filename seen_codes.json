@@ -19,7 +19,10 @@
     "VIP777"
   ],
   "announced_codes": [
-    "JPHolidaySEP"
+    "JPHolidaySEP",
+    "MIDAUTUMN26"
   ],
-  "processing_codes": {}
+  "processing_codes": {
+    "MIDAUTUMN26": "2026-09-25T12:05:50.553649+00:00"
+  }
 }
