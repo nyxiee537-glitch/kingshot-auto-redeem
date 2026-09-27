@@ -20,8 +20,11 @@
     "VIP777"
   ],
   "announced_codes": [
+    "EXPLORETHEWORLD",
     "JPHolidaySEP",
     "MIDAUTUMN26"
   ],
-  "processing_codes": {}
+  "processing_codes": {
+    "EXPLORETHEWORLD": "2026-09-27T12:05:46.822043+00:00"
+  }
 }
