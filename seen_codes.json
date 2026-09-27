@@ -2,6 +2,7 @@
   "initialized": true,
   "seen_codes": [
     "CHILLWEEKEND",
+    "EXPLORETHEWORLD",
     "FB2500KT",
     "HAPPYCATDAY",
     "JP26SUMMER",
@@ -24,7 +25,5 @@
     "JPHolidaySEP",
     "MIDAUTUMN26"
   ],
-  "processing_codes": {
-    "EXPLORETHEWORLD": "2026-09-27T12:35:48.543394+00:00"
-  }
+  "processing_codes": {}
 }
