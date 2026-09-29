@@ -1,6 +1,7 @@
 {
   "initialized": true,
   "seen_codes": [
+    "AKeYD8gK8",
     "CHILLWEEKEND",
     "EXPLORETHEWORLD",
     "FB2500KT",
@@ -26,7 +27,5 @@
     "JPHolidaySEP",
     "MIDAUTUMN26"
   ],
-  "processing_codes": {
-    "AKeYD8gK8": "2026-09-29T17:55:42.409111+00:00"
-  }
+  "processing_codes": {}
 }
