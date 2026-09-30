@@ -22,10 +22,13 @@
     "VIP777"
   ],
   "announced_codes": [
+    "7VAEaNrV7",
     "AKeYD8gK8",
     "EXPLORETHEWORLD",
     "JPHolidaySEP",
     "MIDAUTUMN26"
   ],
-  "processing_codes": {}
+  "processing_codes": {
+    "7VAEaNrV7": "2026-09-30T22:00:01.960605+00:00"
+  }
 }
