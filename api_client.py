@@ -34,7 +34,7 @@ def classify_api_response(d):
       ("CDK NOT FOUND",40014):("code_not_found","ギフトコードが存在しないか無効です。"),
       ("USED",40005):("code_limit_reached","ギフトコードの全体交換上限に達しています。"),
       ("TIMEOUT RETRY",40004):("server_busy","サーバーから再試行を要求されました。"),
-      ("TOO FREQUENT",40019):("server_busy","このアカウントは一時的に交換頻度制限中です。"),
+      ("TOO FREQUENT",40019):("rate_limited","このアカウントは一時的に交換頻度制限中です。"),
       ("USER INFO ERROR",40020):("character_info_error","Player ID / Kingdom情報がサーバー側で一致しません。"),
       ("STOVE_LV ERROR",40006):("requirements_not_met","交換条件を満たしていません。"),
       ("RECHARGE_MONEY ERROR",40017):("requirements_not_met","交換条件を満たしていません。"),
