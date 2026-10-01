@@ -42,9 +42,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          playwright install --with-deps chromium
-
-      - name: Sync latest repository state
+- name: Sync latest repository state
         if: steps.quick_check.outputs.should_run == 'true'
         run: |
           git fetch origin main
@@ -53,8 +51,13 @@ jobs:
       - name: Claim new gift codes
         if: steps.quick_check.outputs.should_run == 'true'
         env:
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           DISCORD_ERROR_WEBHOOK_URL: ${{ secrets.DISCORD_ERROR_WEBHOOK_URL }}
+          VALIDATION_NORMAL_PLAYER_ID: ${{ secrets.VALIDATION_NORMAL_PLAYER_ID }}
+          VALIDATION_VIP_PLAYER_ID: ${{ secrets.VALIDATION_VIP_PLAYER_ID }}
         run: python check_codes.py --claim
 
       - name: Persist claimed state
