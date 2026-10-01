@@ -23,20 +23,72 @@ def send_detection_notification(code,sources):
 
 def send_redeem_notification(code,sources,summary,summary_file):
     rs=summary.get("results",[])
-    n=lambda s:sum(1 for r in rs if r.get("status")==s)
+    n=lambda status:sum(1 for r in rs if r.get("status")==status)
     src=" / ".join(sources) if sources else "不明"
-    lines=["👑 **537 Gift Bot・ギフトコード交換完了**",f"**Code:** `{code}`",f"**Source:** {src}","",
-      f"👥 対象: **{len(rs)}人**",f"✅ Success: **{n('success')}人**",f"☑️ Already: **{n('already_redeemed')}人**",
-      f"🔒 条件未達: **{n('requirements_not_met')}人**"]
-    for s,label in [("character_info_error","⚠️ Character情報エラー"),("player_not_found","⚠️ Player未検出"),("failed","❌ Failed")]:
-        if n(s):lines.append(f"{label}: **{n(s)}人**")
-    lines+=["","📎 詳細結果"]
-    _post({"username":"537 Gift Bot","content":"\n".join(lines),"allowed_mentions":{"parse":[]}},summary_file)
+    restricted=bool(summary.get("restricted"))
+
+    if restricted:
+        lines=[
+          "👑 **VIP・条件付きギフトコードの交換が完了しました**",
+          f"**Code:** `{code}`",
+          f"**Source:** {src}",
+          "",
+          f"👥 対象: **{len(rs)}人**",
+          f"✅ Success: **{n('success')}人**",
+          f"🔒 条件未達: **{n('requirements_not_met')}人**",
+          f"☑️ Already: **{n('already_redeemed')}人**",
+        ]
+        for status,label in [
+          ("character_info_error","⚠️ Character情報エラー"),
+          ("player_not_found","⚠️ Player未検出"),
+          ("failed","❌ Failed"),
+        ]:
+            if n(status):
+                lines.append(f"{label}: **{n(status)}人**")
+        _post({"username":"537 Gift Bot","content":"\\n".join(lines),"allowed_mentions":{"parse":[]}})
+    else:
+        lines=[
+          "👑 **537 Gift Bot・ギフトコード交換完了**",
+          f"**Code:** `{code}`",
+          f"**Source:** {src}",
+          "",
+          f"👥 対象: **{len(rs)}人**",
+          f"✅ Success: **{n('success')}人**",
+          f"☑️ Already: **{n('already_redeemed')}人**",
+          f"🔒 条件未達: **{n('requirements_not_met')}人**",
+        ]
+        for status,label in [
+          ("character_info_error","⚠️ Character情報エラー"),
+          ("player_not_found","⚠️ Player未検出"),
+          ("failed","❌ Failed"),
+        ]:
+            if n(status):
+                lines.append(f"{label}: **{n(status)}人**")
+        lines += ["","📎 詳細結果"]
+        _post({"username":"537 Gift Bot","content":"\\n".join(lines),"allowed_mentions":{"parse":[]}},summary_file)
+
     bad=[r for r in rs if r.get("status") in {"character_info_error","player_not_found"}]
     if bad:
-        e=["⚠️ **537 Gift Bot・アカウント情報エラー**","Player ID / Kingdom情報をAPIで確認できないアカウントがあります。","移民とは断定せず、登録情報を確認してください。",""]
-        for r in bad:e += [f"• **{r.get('name','Unknown')}**",f"  └ {r.get('message','')}"]
-        _post({"username":"537 Gift Bot","content":"\n".join(e),"allowed_mentions":{"parse":[]}},error=True)
+        e=[
+          "⚠️ **537 Gift Bot・アカウント情報エラー**",
+          "Player ID / Kingdom情報をAPIで確認できないアカウントがあります。",
+          "移民とは断定せず、登録情報を確認してください。",
+          "",
+        ]
+        for r in bad:
+            e += [f"• **{r.get('name','Unknown')}**",f"  └ {r.get('message','')}"]
+        _post({"username":"537 Gift Bot","content":"\\n".join(e),"allowed_mentions":{"parse":[]}},error=True)
+
+def send_api_interruption_notification(code,consecutive_failures):
+    lines=[
+      "🚨 **537 Gift Bot・APIエラー**",
+      "KingShot APIへの接続エラーが連続して発生したため、交換処理を一時停止しました。",
+      f"**Code:** `{code}`",
+      f"**連続エラー:** {consecutive_failures}件",
+      "",
+      "🔄 次回の実行で再試行します。",
+    ]
+    _post({"username":"537 Gift Bot","content":"\\n".join(lines),"allowed_mentions":{"parse":[]}},error=True)
 
 def send_source_error_notification(errors):
     if not errors:return
