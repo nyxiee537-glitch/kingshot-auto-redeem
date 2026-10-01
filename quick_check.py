@@ -41,10 +41,10 @@ def load_seen_codes() -> tuple[bool, set[str]]:
 
 def main() -> int:
     """
-    Playwright を入れる前に、取得元だけを軽く確認する。
+    API交換処理の前に、取得元だけを軽く確認する。
 
     新コードなし: 重い処理をスキップ
-    新コードあり: Playwright を入れて通常処理へ進む
+    新コードあり: APIで有効性を検証して通常処理へ進む
     取得元エラー: fallback とエラー通知を維持するため通常処理へ進む
     """
     initialized, seen_codes = load_seen_codes()
