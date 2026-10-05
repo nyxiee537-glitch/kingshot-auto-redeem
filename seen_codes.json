@@ -32,7 +32,5 @@
     "MIDAUTUMN26"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {
-    "KS1005": "2026-10-05T05:40:17.539283+00:00"
-  }
+  "processing_codes": {}
 }
