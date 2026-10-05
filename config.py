@@ -26,5 +26,8 @@ API_CONSECUTIVE_FAILURE_LIMIT=10
 VALIDATION_NORMAL_PLAYER_ID=os.environ.get("VALIDATION_NORMAL_PLAYER_ID","").strip()
 VALIDATION_VIP_PLAYER_ID=os.environ.get("VALIDATION_VIP_PLAYER_ID","").strip()
 
+# Set to False temporarily to silence ALL Discord notifications.
+DISCORD_NOTIFICATIONS_ENABLED = False
+
 DISCORD_WEBHOOK_URL=os.environ.get("DISCORD_WEBHOOK_URL","").strip()
 DISCORD_ERROR_WEBHOOK_URL=os.environ.get("DISCORD_ERROR_WEBHOOK_URL","").strip()
