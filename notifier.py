@@ -2,10 +2,13 @@ from __future__ import annotations
 import json,os
 from pathlib import Path
 import requests
-from config import DISCORD_WEBHOOK_URL,HTTP_TIMEOUT
+from config import DISCORD_WEBHOOK_URL,HTTP_TIMEOUT,DISCORD_NOTIFICATIONS_ENABLED
 ERROR_WEBHOOK_URL=os.environ.get("DISCORD_ERROR_WEBHOOK_URL","").strip()
 
 def _post(payload,attachment=None,error=False):
+    if not DISCORD_NOTIFICATIONS_ENABLED:
+        print("🔇 Discord notification skipped (DISCORD_NOTIFICATIONS_ENABLED=False)")
+        return
     url=ERROR_WEBHOOK_URL if error and ERROR_WEBHOOK_URL else DISCORD_WEBHOOK_URL
     if not url:return
     if attachment and Path(attachment).exists():
