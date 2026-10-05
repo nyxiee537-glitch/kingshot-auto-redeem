@@ -103,7 +103,7 @@ def run_redeemer(code, validation_results=None):
     except Exception:return False,{}
     if s.get("fatal_code_status"):return True,s
     if s.get("api_outage"):return False,s
-    retry={"server_busy","unknown","rate_limited"}
+    retry={"server_busy","unknown","rate_limited","pending"}
     terminal={"success","already_redeemed","failed","requirements_not_met","character_info_error","player_not_found",
               "code_expired","code_not_found","code_limit_reached"}
     results=s.get("results",[])
