@@ -30,8 +30,11 @@
     "EXPLORETHEWORLD",
     "JPHolidaySEP",
     "KS1005",
-    "MIDAUTUMN26"
+    "MIDAUTUMN26",
+    "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {}
+  "processing_codes": {
+    "WELLDONE": "2026-10-05T12:05:20.528411+00:00"
+  }
 }
