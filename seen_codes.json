@@ -28,8 +28,11 @@
     "AKeYD8gK8",
     "EXPLORETHEWORLD",
     "JPHolidaySEP",
+    "KS1005",
     "MIDAUTUMN26"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {}
+  "processing_codes": {
+    "KS1005": "2026-10-05T08:17:26.294831+00:00"
+  }
 }
