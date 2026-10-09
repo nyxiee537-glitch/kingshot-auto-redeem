@@ -29,11 +29,14 @@
     "7VAEaNrV7",
     "AKeYD8gK8",
     "EXPLORETHEWORLD",
+    "Hangul2026",
     "JPHolidaySEP",
     "KS1005",
     "MIDAUTUMN26",
     "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {}
+  "processing_codes": {
+    "Hangul2026": "2026-10-09T07:40:16.156743+00:00"
+  }
 }
