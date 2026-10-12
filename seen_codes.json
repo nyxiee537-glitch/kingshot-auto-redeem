@@ -4,6 +4,7 @@
     "7VAEaNrV7",
     "84yQNP42a",
     "AKeYD8gK8",
+    "CHALLENGE26",
     "CHILLWEEKEND",
     "EXPLORETHEWORLD",
     "FB2500KT",
@@ -38,7 +39,5 @@
     "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {
-    "CHALLENGE26": "2026-10-12T09:05:20.019952+00:00"
-  }
+  "processing_codes": {}
 }
