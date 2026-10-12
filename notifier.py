@@ -48,7 +48,7 @@ def send_redeem_notification(code,sources,summary,summary_file):
         ]:
             if n(status):
                 lines.append(f"{label}: **{n(status)}人**")
-        _post({"username":"537 Gift Bot","content":"\\n".join(lines),"allowed_mentions":{"parse":[]}})
+        _post({"username":"537 Gift Bot","content":"\n".join(lines),"allowed_mentions":{"parse":[]}})
     else:
         lines=[
           "👑 **537 Gift Bot・ギフトコード交換完了**",
@@ -68,7 +68,7 @@ def send_redeem_notification(code,sources,summary,summary_file):
             if n(status):
                 lines.append(f"{label}: **{n(status)}人**")
         lines += ["","📎 詳細結果"]
-        _post({"username":"537 Gift Bot","content":"\\n".join(lines),"allowed_mentions":{"parse":[]}},summary_file)
+        _post({"username":"537 Gift Bot","content":"\n".join(lines),"allowed_mentions":{"parse":[]}},summary_file)
 
     bad=[r for r in rs if r.get("status") in {"character_info_error","player_not_found"}]
     if bad:
@@ -80,7 +80,7 @@ def send_redeem_notification(code,sources,summary,summary_file):
         ]
         for r in bad:
             e += [f"• **{r.get('name','Unknown')}**",f"  └ {r.get('message','')}"]
-        _post({"username":"537 Gift Bot","content":"\\n".join(e),"allowed_mentions":{"parse":[]}},error=True)
+        _post({"username":"537 Gift Bot","content":"\n".join(e),"allowed_mentions":{"parse":[]}},error=True)
 
 def send_api_interruption_notification(code,consecutive_failures):
     lines=[
@@ -91,7 +91,7 @@ def send_api_interruption_notification(code,consecutive_failures):
       "",
       "🔄 次回の実行で再試行します。",
     ]
-    _post({"username":"537 Gift Bot","content":"\\n".join(lines),"allowed_mentions":{"parse":[]}},error=True)
+    _post({"username":"537 Gift Bot","content":"\n".join(lines),"allowed_mentions":{"parse":[]}},error=True)
 
 def send_source_error_notification(errors):
     if not errors:return
