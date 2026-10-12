@@ -29,6 +29,7 @@
   "announced_codes": [
     "7VAEaNrV7",
     "AKeYD8gK8",
+    "CHALLENGE26",
     "EXPLORETHEWORLD",
     "Hangul2026",
     "JPHolidaySEP",
@@ -37,5 +38,7 @@
     "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {}
+  "processing_codes": {
+    "CHALLENGE26": "2026-10-12T09:05:20.019952+00:00"
+  }
 }
