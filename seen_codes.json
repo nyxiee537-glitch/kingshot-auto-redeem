@@ -33,11 +33,14 @@
     "CHALLENGE26",
     "EXPLORETHEWORLD",
     "Hangul2026",
+    "IG200KS",
     "JPHolidaySEP",
     "KS1005",
     "MIDAUTUMN26",
     "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {}
+  "processing_codes": {
+    "IG200KS": "2026-10-13T04:10:22.524839+00:00"
+  }
 }
