@@ -26,6 +26,7 @@
     "OFFICIALSTORE0904",
     "v4nyYrew4",
     "VIP0822",
+    "VIP1017",
     "VIP777",
     "WELLDONE"
   ],
@@ -44,7 +45,5 @@
     "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {
-    "VIP1017": "2026-10-17T03:30:22.558727+00:00"
-  }
+  "processing_codes": {}
 }
