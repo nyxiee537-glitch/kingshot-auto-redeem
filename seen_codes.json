@@ -40,8 +40,11 @@
     "KS1005",
     "KS1017",
     "MIDAUTUMN26",
+    "VIP1017",
     "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {}
+  "processing_codes": {
+    "VIP1017": "2026-10-17T03:30:22.558727+00:00"
+  }
 }
