@@ -42,9 +42,12 @@
     "KS1005",
     "KS1017",
     "MIDAUTUMN26",
+    "OFFICIALSTORE1023",
     "VIP1017",
     "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {}
+  "processing_codes": {
+    "OFFICIALSTORE1023": "2026-10-23T12:05:19.480576+00:00"
+  }
 }
