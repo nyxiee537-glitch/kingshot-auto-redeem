@@ -42,11 +42,14 @@
     "JPHolidaySEP",
     "KS1005",
     "KS1017",
+    "KS1025",
     "MIDAUTUMN26",
     "OFFICIALSTORE1023",
     "VIP1017",
     "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {}
+  "processing_codes": {
+    "KS1025": "2026-10-25T05:25:14.923574+00:00"
+  }
 }
