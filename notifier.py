@@ -27,6 +27,8 @@ def send_detection_notification(code,sources):
 def send_redeem_notification(code,sources,summary,summary_file):
     rs=summary.get("results",[])
     n=lambda status:sum(1 for r in rs if r.get("status")==status)
+    total = len(rs)
+    pct = lambda status: f"{n(status) / total * 100:.1f}%" if total else "0.0%"
     src=" / ".join(sources) if sources else "不明"
     restricted=bool(summary.get("restricted"))
 
@@ -36,10 +38,9 @@ def send_redeem_notification(code,sources,summary,summary_file):
           f"**Code:** `{code}`",
           f"**Source:** {src}",
           "",
-          f"👥 対象: **{len(rs)}人**",
-          f"✅ Success: **{n('success')}人**",
-          f"🔒 条件未達: **{n('requirements_not_met')}人**",
-          f"☑️ Already: **{n('already_redeemed')}人**",
+          f"✅ Success: **{pct('success')}**",
+          f"🔒 条件未達: **{pct('requirements_not_met')}**",
+          f"☑️ Already: **{pct('already_redeemed')}**",
         ]
         for status,label in [
           ("character_info_error","⚠️ Character情報エラー"),
@@ -47,7 +48,7 @@ def send_redeem_notification(code,sources,summary,summary_file):
           ("failed","❌ Failed"),
         ]:
             if n(status):
-                lines.append(f"{label}: **{n(status)}人**")
+                lines.append(f"{label}: **{pct(status)}**")
         _post({"username":"537 Gift Bot","content":"\n".join(lines),"allowed_mentions":{"parse":[]}})
     else:
         lines=[
@@ -55,10 +56,9 @@ def send_redeem_notification(code,sources,summary,summary_file):
           f"**Code:** `{code}`",
           f"**Source:** {src}",
           "",
-          f"👥 対象: **{len(rs)}人**",
-          f"✅ Success: **{n('success')}人**",
-          f"☑️ Already: **{n('already_redeemed')}人**",
-          f"🔒 条件未達: **{n('requirements_not_met')}人**",
+          f"✅ Success: **{pct('success')}**",
+          f"☑️ Already: **{pct('already_redeemed')}**",
+          f"🔒 条件未達: **{pct('requirements_not_met')}**",
         ]
         for status,label in [
           ("character_info_error","⚠️ Character情報エラー"),
@@ -66,7 +66,7 @@ def send_redeem_notification(code,sources,summary,summary_file):
           ("failed","❌ Failed"),
         ]:
             if n(status):
-                lines.append(f"{label}: **{n(status)}人**")
+                lines.append(f"{label}: **{pct(status)}**")
         _post({"username":"537 Gift Bot","content":"\n".join(lines),"allowed_mentions":{"parse":[]}})
 
     bad=[r for r in rs if r.get("status") in {"character_info_error","player_not_found"}]
