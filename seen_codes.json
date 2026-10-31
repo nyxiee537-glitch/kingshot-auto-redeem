@@ -46,9 +46,12 @@
     "KS1025",
     "MIDAUTUMN26",
     "OFFICIALSTORE1023",
+    "TREAT4U",
     "VIP1017",
     "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {}
+  "processing_codes": {
+    "TREAT4U": "2026-10-31T12:05:19.195562+00:00"
+  }
 }
