@@ -67,8 +67,7 @@ def send_redeem_notification(code,sources,summary,summary_file):
         ]:
             if n(status):
                 lines.append(f"{label}: **{n(status)}人**")
-        lines += ["","📎 詳細結果"]
-        _post({"username":"537 Gift Bot","content":"\n".join(lines),"allowed_mentions":{"parse":[]}},summary_file)
+        _post({"username":"537 Gift Bot","content":"\n".join(lines),"allowed_mentions":{"parse":[]}})
 
     bad=[r for r in rs if r.get("status") in {"character_info_error","player_not_found"}]
     if bad:
