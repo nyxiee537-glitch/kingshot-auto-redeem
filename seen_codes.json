@@ -47,6 +47,7 @@
     "KS1017",
     "KS1025",
     "KS1102",
+    "KS1104",
     "MIDAUTUMN26",
     "OFFICIALSTORE1023",
     "TREAT4U",
@@ -54,5 +55,7 @@
     "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {}
+  "processing_codes": {
+    "KS1104": "2026-11-04T06:20:17.119534+00:00"
+  }
 }
