@@ -8,6 +8,7 @@
     "CHILLWEEKEND",
     "EXPLORETHEWORLD",
     "FB2500KT",
+    "FORTHEKINGDOM",
     "Hangul2026",
     "HAPPYCATDAY",
     "IG200KS",
@@ -57,7 +58,5 @@
     "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {
-    "FORTHEKINGDOM": "2026-11-05T08:00:27.273451+00:00"
-  }
+  "processing_codes": {}
 }
