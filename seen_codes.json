@@ -41,6 +41,7 @@
     "AKeYD8gK8",
     "CHALLENGE26",
     "EXPLORETHEWORLD",
+    "FORTHEKINGDOM",
     "Hangul2026",
     "IG200KS",
     "JPHolidaySEP",
@@ -56,5 +57,7 @@
     "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {}
+  "processing_codes": {
+    "FORTHEKINGDOM": "2026-11-05T08:00:27.273451+00:00"
+  }
 }
