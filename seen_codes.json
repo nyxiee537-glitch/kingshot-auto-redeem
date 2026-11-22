@@ -40,6 +40,7 @@
   ],
   "announced_codes": [
     "11OFFICIALSTORE08",
+    "1T1G2D2",
     "7VAEaNrV7",
     "AKeYD8gK8",
     "CHALLENGE26",
@@ -55,10 +56,14 @@
     "KS1104",
     "MIDAUTUMN26",
     "OFFICIALSTORE1023",
+    "SAYHIHI",
     "TREAT4U",
     "VIP1017",
     "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {}
+  "processing_codes": {
+    "1T1G2D2": "2026-11-22T09:57:19.088717+00:00",
+    "SAYHIHI": "2026-11-22T09:57:19.088717+00:00"
+  }
 }
