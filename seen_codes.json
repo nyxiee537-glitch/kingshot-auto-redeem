@@ -29,6 +29,7 @@
     "KS1025",
     "KS1102",
     "KS1104",
+    "KS27TGS",
     "lwaL5ZKx5",
     "MIDAUTUMN26",
     "OFFICIALSTORE08011",
@@ -69,7 +70,5 @@
     "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {
-    "KS27TGS": "2026-11-23T10:30:23.595009+00:00"
-  }
+  "processing_codes": {}
 }
