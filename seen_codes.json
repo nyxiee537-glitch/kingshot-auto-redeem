@@ -35,6 +35,7 @@
     "OFFICIALSTORE0904",
     "OFFICIALSTORE1023",
     "SAYHIHI",
+    "THANKS4WORK",
     "TREAT4U",
     "v4nyYrew4",
     "VIP0822",
@@ -67,7 +68,5 @@
     "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {
-    "THANKS4WORK": "2026-11-23T09:45:20.898802+00:00"
-  }
+  "processing_codes": {}
 }
