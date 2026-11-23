@@ -59,6 +59,7 @@
     "KS1025",
     "KS1102",
     "KS1104",
+    "KS27TGS",
     "MIDAUTUMN26",
     "OFFICIALSTORE1023",
     "SAYHIHI",
@@ -68,5 +69,7 @@
     "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {}
+  "processing_codes": {
+    "KS27TGS": "2026-11-23T10:30:23.595009+00:00"
+  }
 }
