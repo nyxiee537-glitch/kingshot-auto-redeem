@@ -13,6 +13,7 @@
     "EXPLORETHEWORLD",
     "FB2500KT",
     "FORTHEKINGDOM",
+    "GOBBLE",
     "Hangul2026",
     "HAPPYCATDAY",
     "IG200KS",
@@ -71,7 +72,5 @@
     "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {
-    "GOBBLE": "2026-11-26T12:05:17.265507+00:00"
-  }
+  "processing_codes": {}
 }
