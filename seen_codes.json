@@ -52,6 +52,7 @@
     "CHALLENGE26",
     "EXPLORETHEWORLD",
     "FORTHEKINGDOM",
+    "GOBBLE",
     "Hangul2026",
     "IG200KS",
     "JPHolidaySEP",
@@ -70,5 +71,7 @@
     "WELLDONE"
   ],
   "api_alerted_codes": [],
-  "processing_codes": {}
+  "processing_codes": {
+    "GOBBLE": "2026-11-26T12:05:17.265507+00:00"
+  }
 }
